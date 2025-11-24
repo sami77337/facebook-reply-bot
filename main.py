@@ -3,6 +3,8 @@ import time
 import re
 import json
 import os
+
+from database_manager import DatabaseManager
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -11,6 +13,8 @@ load_dotenv()
 PAGE_ACCESS_TOKEN = os.getenv("FB_ACCESS_TOKEN")
 PAGE_ID = os.getenv("FB_PAGE_ID")
 
+manager = DatabaseManager() 
+
 # ملف الردود الموجود بجانب السكريبت
 RESPONSES_FILE = os.path.join(os.path.dirname(__file__), "responses.json")
 LOG_FILE = os.path.join(os.path.dirname(__file__), "log.txt")
@@ -18,6 +22,40 @@ SEEN_FILE = os.path.join(os.path.dirname(__file__), "seen_comments.json")
 
 if not PAGE_ACCESS_TOKEN or not PAGE_ID:
     raise ValueError("❌ Please set FB_ACCESS_TOKEN and FB_PAGE_ID in environment.")
+
+
+def match_comment(comment, name, post_id=None):
+        # Fetch relevant rules
+        rules = manager.get_global_rules()
+        if post_id:
+            rules += manager.get_post_rules(post_id)
+
+        matched_rules = []
+        for rule in rules:
+            try:
+                if re.search(rule['patterns'], comment, re.IGNORECASE):
+                    matched_rules.append(rule)
+            except re.error as e:
+                # Skip invalid regex
+                print(f"Invalid regex in rule {rule['id']}: {e}")
+                continue
+
+        if not matched_rules:
+            return None
+
+        matched_rules.sort(key=lambda r: r['priority'], reverse=True)
+
+        combined = []
+        seen_responses = set()
+        for rule in matched_rules:
+            resp = rule['response']
+            if resp:
+                resp_text = resp.replace("{name}", name)
+                if resp_text not in seen_responses:
+                    combined.append(resp_text)
+                    seen_responses.add(resp_text)
+
+        return "\n".join(combined)
 
 # تحميل الردود
 def load_responses():
