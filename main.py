@@ -58,10 +58,9 @@ def run_bot_once():
             processed_count = 0
             for future in as_completed(futures):
                 try:
-                    result = future.result()
-                    processed_count += 1
-                    if processed_count % 10 == 0:
-                        print(f"📊 Progress: {processed_count}/{len(posts)} posts processed")
+                    future.result(timeout=300)
+                    processed_count += 1                    
+                    print(f"📊 Progress: {processed_count}/{len(posts)} posts processed")
                 except Exception as e:
                     print(f"Error {e}")
 
