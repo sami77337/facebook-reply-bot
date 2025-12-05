@@ -33,7 +33,7 @@ jobs:
         PAGE_ACCESS_TOKEN: ${{ secrets.PAGE_ACCESS_TOKEN }}
         PAGE_ID: ${{ secrets.PAGE_ID }}
       run: |
-        python bot.py
+        python main.py
     
     - name: Commit and push replied comments
       run: |
