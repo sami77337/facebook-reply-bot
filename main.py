@@ -6,10 +6,14 @@ from bot_manager import BotManager
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# إعدادات الصفحة
-load_dotenv()
-PAGE_ACCESS_TOKEN = os.getenv("FB_ACCESS_TOKEN")
-PAGE_ID = os.getenv("FB_PAGE_ID")
+if os.getenv("GITHUB_ACTIONS") == "true":
+    PAGE_ACCESS_TOKEN = os.getenv("FB_ACCESS_TOKEN")
+    PAGE_ID = os.getenv("FB_PAGE_ID")
+else:
+    from dotenv import load_dotenv
+    load_dotenv()
+    PAGE_ACCESS_TOKEN = os.getenv("FB_ACCESS_TOKEN")
+    PAGE_ID = os.getenv("FB_PAGE_ID")
 
 # ملف الردود الموجود بجانب السكريبت
 RESPONSES_FILE = os.path.join(os.path.dirname(__file__), "responses.json")
@@ -43,32 +47,50 @@ def load_responses():
     return data
 
 # تشغيل البوت
-def run_bot():    
-    print("🤖 Bot is running... (Ctrl + C to stop)")
+def run_bot_once():
     seen_comments = load_seen_comments()
-    last_reload_time = 0
-    reload_interval = 60
+    
+    try:
+        botManager = BotManager(access_token=PAGE_ACCESS_TOKEN, page_id=PAGE_ID)
+        responses_data = load_responses()        
+        posts = botManager.get_all_posts(limit=50) 
+        print(f"📊 Fetched {len(posts)} posts from the page.")
+        if not posts:
+            return 0
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(botManager.process_post, post, responses_data, seen_comments) for post in posts]
 
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        while True:
-            try:
-                botManager = BotManager()
-                current_time = time.time()
-                if current_time - last_reload_time > reload_interval:
-                    responses_data = load_responses()
-                    last_reload_time = current_time
+            processed_count = 0
+            for future in as_completed(futures):
+                try:
+                    future.result(timeout=300)
+                    processed_count += 1                    
+                    print(f"📊 Progress: {processed_count}/{len(posts)} posts processed")
+                except Exception as e:
+                    print(f"Error {e}")
 
-                posts = botManager.get_all_posts(limit=50)
-                futures = [executor.submit(botManager.process_post, post, responses_data, seen_comments) for post in posts]
-                for future in as_completed(futures):
-                    future.result()
+        save_seen_comments(seen_comments)
+        return processed_count
+        
+    except Exception as e:
+        print(f"❌ Failed: {e}")
+        raise
 
-                save_seen_comments(seen_comments)
-                time.sleep(10)
+def main():
+    start_time = time.time()
+    print(f"started at {time.ctime(start_time)}")
+    
+    try:
+        posts_processed = run_bot_once()
+        end_time = time.time()
+        duration = end_time - start_time
 
-            except Exception:
-                time.sleep(30)
+        print(f"completed in {duration:.2f} seconds")
+        print(f"📊 Total posts processed: {posts_processed}")
+        
+    except Exception as e:
+        print(f"Error: {e}")
+        raise
 
-# نقطة البداية
 if __name__ == "__main__":
-    run_bot()
+    main()

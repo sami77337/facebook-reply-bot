@@ -1,10 +1,9 @@
 import requests
 import time
 import re
-import json
 import os
 
-from database_manager import DatabaseManager
+#from database_manager import DatabaseManager
 
 RESPONSES_FILE = os.path.join(os.path.dirname(__file__), "responses.json")
 LOG_FILE = os.path.join(os.path.dirname(__file__), "log.txt")
@@ -14,9 +13,10 @@ class BotManager:
     def __init__(self, access_token=None, page_id=None):
         self.access_token = access_token or os.getenv("FB_ACCESS_TOKEN")
         self.page_id = page_id or os.getenv("FB_PAGE_ID")
-        self.manager = DatabaseManager()
+        #self.manager = DatabaseManager()
         self.session = requests.Session()
         self.session.params = {"access_token": self.access_token}
+        self.session.headers.update({'User-Agent': 'Mozilla/5.0 (compatible; AutoResponseBot/1.0)', 'Accept': 'application/json'})
 
     # جلب المنشورات
     def get_all_posts(self, limit=50):
@@ -30,7 +30,8 @@ class BotManager:
                 data = resp.json()
                 posts.extend(data.get("data", []))
                 url = data.get("paging", {}).get("next")
-            except Exception:
+            except Exception as e:
+                print("❌ Error fetching posts. ", e)
                 break
         return posts
 
@@ -38,6 +39,7 @@ class BotManager:
     def get_all_comments(self, post_id):
         comments = []
         url = f"https://graph.facebook.com/{post_id}/comments?limit=100"
+        print(f"🔄 Fetching comments from URL: {url}")
         while url:
             try:
                 resp = self.session.get(url)
@@ -86,7 +88,6 @@ class BotManager:
             if comment_id not in seen_comments:
                 if self.match_and_reply(post_id, comment, responses_data):
                     seen_comments.add(comment_id)
-
 
 # منطق الرد الخاص والعام
 def get_post_patterns(post_id, responses_data):
