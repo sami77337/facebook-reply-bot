@@ -34,6 +34,10 @@ jobs:
         FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
       run: |
         python main.py
+
+    - name: Debug output
+      run: |
+        echo "Page ID: $FB_PAGE_ID"
   
     - name: Upload logs as artifact
       if: always()

@@ -47,6 +47,7 @@ def run_bot_once():
     seen_comments = load_seen_comments()
     
     try:
+        print(PAGE_ACCESS_TOKEN, PAGE_ID)
         botManager = BotManager(access_token=PAGE_ACCESS_TOKEN, page_id=PAGE_ID)
         responses_data = load_responses()        
         posts = botManager.get_all_posts(limit=50)        
