@@ -1,7 +1,6 @@
 import requests
 import time
 import re
-import json
 import os
 
 #from database_manager import DatabaseManager
