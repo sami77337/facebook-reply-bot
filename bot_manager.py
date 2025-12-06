@@ -16,7 +16,7 @@ class BotManager:
         #self.manager = DatabaseManager()
         self.session = requests.Session()
         self.session.params = {"access_token": self.access_token}
-        print("🤖 BotManager initialized with page ID:", self.page_id)
+        self.session.headers.update({'User-Agent': 'Mozilla/5.0 (compatible; AutoResponseBot/1.0)', 'Accept': 'application/json'})
 
     # جلب المنشورات
     def get_all_posts(self, limit=50):
@@ -31,6 +31,7 @@ class BotManager:
                 posts.extend(data.get("data", []))
                 url = data.get("paging", {}).get("next")
             except Exception:
+                print("❌ Error fetching posts.")
                 break
         return posts
 
@@ -87,7 +88,6 @@ class BotManager:
             if comment_id not in seen_comments:
                 if self.match_and_reply(post_id, comment, responses_data):
                     seen_comments.add(comment_id)
-
 
 # منطق الرد الخاص والعام
 def get_post_patterns(post_id, responses_data):
