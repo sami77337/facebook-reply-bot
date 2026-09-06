@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from datetime import UTC, datetime
 from typing import Any
@@ -18,6 +19,16 @@ from app.domain.events import (
 )
 from app.domain.states import ProcessingState, validate_transition
 from app.persistence.sqlite import SQLiteDatabase
+
+_MAX_ERROR_CODE_LENGTH = 64
+_MAX_ERROR_MESSAGE_LENGTH = 512
+_BEARER_TOKEN_RE = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+")
+_SECRET_ASSIGNMENT_RE = re.compile(
+    r"(?i)\b(authorization|api[_-]?key|access[_-]?token|secret|password|passwd|token)"
+    r"\b\s*[:=]\s*[\"']?[^,\s;\"']+[\"']?"
+)
+_OPENAI_STYLE_KEY_RE = re.compile(r"\bsk-[A-Za-z0-9_-]{10,}\b")
+_TELEGRAM_STYLE_TOKEN_RE = re.compile(r"\b\d{6,}:[A-Za-z0-9_-]{20,}\b")
 
 
 class EventNotFound(LookupError):
@@ -40,6 +51,37 @@ def _to_timestamp(value: datetime) -> str:
 
 def _from_timestamp(value: str) -> datetime:
     return datetime.fromisoformat(value)
+
+
+def _normalize_error_code(value: str | None) -> str | None:
+    if value is None:
+        return None
+    code = value.strip()
+    if not code:
+        return None
+    if len(code) > _MAX_ERROR_CODE_LENGTH or any(char.isspace() for char in code):
+        raise ValueError("error_code must be a compact identifier of at most 64 characters")
+    return code
+
+
+def _sanitize_error_message(value: str | None) -> str | None:
+    """Reduce diagnostics to a bounded single-line summary and redact common secrets."""
+
+    if value is None:
+        return None
+    sanitized = " ".join(value.split())
+    if not sanitized:
+        return None
+    sanitized = _BEARER_TOKEN_RE.sub("Bearer [REDACTED]", sanitized)
+    sanitized = _SECRET_ASSIGNMENT_RE.sub(
+        lambda match: f"{match.group(1)}=[REDACTED]",
+        sanitized,
+    )
+    sanitized = _OPENAI_STYLE_KEY_RE.sub("[REDACTED]", sanitized)
+    sanitized = _TELEGRAM_STYLE_TOKEN_RE.sub("[REDACTED]", sanitized)
+    if len(sanitized) > _MAX_ERROR_MESSAGE_LENGTH:
+        sanitized = sanitized[: _MAX_ERROR_MESSAGE_LENGTH - 3] + "..."
+    return sanitized
 
 
 def _event_from_row(row: sqlite3.Row) -> InboundEvent:
@@ -271,6 +313,8 @@ class DurableRepository:
         started_at = _utc_now()
         finished_at = started_at if finished else None
         attempt_id = str(uuid4())
+        safe_error_code = _normalize_error_code(error_code)
+        safe_error_message = _sanitize_error_message(error_message)
 
         with self.database.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -307,8 +351,8 @@ class DurableRepository:
                     _to_timestamp(started_at),
                     _to_timestamp(finished_at) if finished_at else None,
                     outcome,
-                    error_code,
-                    error_message,
+                    safe_error_code,
+                    safe_error_message,
                 ),
             )
             created = connection.execute(
@@ -371,7 +415,8 @@ class DurableRepository:
                 connection.commit()
                 if row is None:
                     raise RuntimeError("inserted outbound action could not be reloaded")
-                return OutboundActionResult(_action_from_row(row), True)
+                return OutboundActionResult(_action_from_row(row), True
+                )
             except sqlite3.IntegrityError:
                 row = connection.execute(
                     "SELECT * FROM outbound_actions WHERE idempotency_key = ?",
