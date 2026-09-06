@@ -24,11 +24,17 @@ class EventNotFound(LookupError):
     """Raised when a requested durable event does not exist."""
 
 
+class IdempotencyConflict(RuntimeError):
+    """Raised when an idempotency key is reused for different outbound semantics."""
+
+
 def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 
 def _to_timestamp(value: datetime) -> str:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("datetime must be timezone-aware")
     return value.astimezone(UTC).isoformat()
 
 
@@ -213,6 +219,8 @@ class DurableRepository:
     ) -> InboundEvent:
         """Persist a retryable failure, increment retry count, and schedule eligibility."""
 
+        if next_retry_at.tzinfo is None or next_retry_at.utcoffset() is None:
+            raise ValueError("next_retry_at must be timezone-aware")
         retry_at = next_retry_at.astimezone(UTC)
         with self.database.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -372,4 +380,13 @@ class DurableRepository:
                 connection.commit()
                 if row is None:
                     raise
-                return OutboundActionResult(_action_from_row(row), False)
+                existing = _action_from_row(row)
+                if (
+                    existing.event_id != event_id
+                    or existing.platform is not platform
+                    or existing.action_type != action_type
+                ):
+                    raise IdempotencyConflict(
+                        "idempotency_key is already bound to a different outbound action"
+                    )
+                return OutboundActionResult(existing, False)
