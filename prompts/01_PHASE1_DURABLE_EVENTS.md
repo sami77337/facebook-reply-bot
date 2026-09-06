@@ -12,7 +12,7 @@ Implement GitHub Issue #6 on branch `codex/v1-full-build`.
 
 ## Scope
 
-Build only the durable processing core. Do not add live Meta, Telegram, OpenAI, or fatwa-bot calls in this phase.
+Build only the durable processing core. Do not add live Meta, Telegram, YouTube/Google, OpenAI, or fatwa-bot calls in this phase.
 
 ## Required architecture
 
@@ -43,6 +43,9 @@ Allowed values:
 - `facebook`
 - `instagram`
 - `telegram`
+- `youtube`
+
+Platform-specific collectors/adapters are not implemented in this phase. The durable model must nevertheless accept normalized events for all four V1 platforms so later adapters do not require schema redesign.
 
 ### Processing states
 
@@ -57,7 +60,7 @@ At minimum:
 
 Create an explicit transition table. Do not allow arbitrary status mutation.
 
-Recommended transition behavior:
+Allowed transitions for Phase 1:
 
 - `received -> processing`
 - `processing -> completed`
@@ -94,6 +97,8 @@ Persist normalized fields only. Include at least:
 
 Enforce unique `(platform, external_event_key)`.
 
+Do not encode Facebook/Instagram/Telegram/YouTube-specific business logic in this table. IDs are normalized adapter outputs; later adapters define how vendor-specific video/post/thread/comment identifiers map into these fields.
+
 ### processing_attempts
 
 Include at least:
@@ -127,13 +132,14 @@ Enforce unique `idempotency_key`.
 
 ## Persistence rules
 
-- Enable SQLite foreign keys.
-- Prefer WAL mode for V1 where safe.
+- Enable SQLite foreign keys on every connection.
+- Prefer WAL mode for file-backed V1 databases where safe.
 - Configure a sensible busy timeout.
 - Use parameterized SQL.
 - Keep connection handling explicit and testable.
 - No global long-lived mutable connection shared unsafely across threads.
 - All timestamps UTC.
+- Create parent directory for a file-backed database when needed.
 
 ## Ingestion semantics
 
@@ -159,15 +165,18 @@ Add tests proving:
 
 1. New DB initializes correctly.
 2. First event insert succeeds.
-3. Same event inserted 100 times results in one row.
-4. Duplicate calls return the same internal event ID.
-5. Invalid state transitions raise a deterministic domain error.
-6. Valid transitions persist.
-7. A file-backed temp DB retains events after repository/service recreation.
-8. Duplicate outbound idempotency keys cannot create two actions.
-9. Processing attempts are stored and increment correctly.
-10. SQLite foreign keys are active.
-11. Concurrent duplicate ingestion does not produce duplicates.
+3. Platform enum accepts exactly Facebook, Instagram, Telegram, and YouTube V1 values.
+4. Same event inserted 100 times results in one row.
+5. Duplicate calls return the same internal event ID.
+6. Invalid state transitions raise a deterministic domain error.
+7. Valid transitions persist.
+8. A file-backed temp DB retains events after repository/service recreation.
+9. Duplicate outbound idempotency keys cannot create two actions.
+10. Processing attempts are stored and increment correctly.
+11. SQLite foreign keys are active.
+12. Concurrent duplicate ingestion does not produce duplicates.
+13. The same external event key on two different platforms is allowed and creates two records.
+14. YouTube normalized events behave identically to the other platform values in the durable core.
 
 ## Quality gates
 
@@ -183,7 +192,7 @@ Do not weaken existing Phase 0 tests or lint/type configuration just to make thi
 
 ## Documentation
 
-Update `docs/ARCHITECTURE.md` with the durable event boundary and persist-first rule. Keep documentation high-level and do not expose unnecessary fatwa workflow internals.
+Keep `docs/ARCHITECTURE.md` aligned with the durable event boundary, persist-first rule, four V1 platforms, and outbound idempotency boundary.
 
 ## Out of scope
 
@@ -192,6 +201,8 @@ Update `docs/ARCHITECTURE.md` with the durable event boundary and persist-first 
 - FAQ routing
 - Telegram supervisor flow
 - Meta webhooks
+- Telegram live adapter
+- YouTube Data API / Google live adapter
 - fatwa bridge
 - live outbound publishing
 - Redis/Celery/Kafka
