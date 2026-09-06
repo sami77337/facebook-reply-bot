@@ -58,3 +58,43 @@ def test_retry_schedule_rejects_naive_datetime(tmp_path: Path) -> None:
             event_id,
             next_retry_at=datetime(2026, 9, 6, 8, 0),
         )
+
+
+def test_processing_diagnostics_are_bounded_single_line_and_redacted(tmp_path: Path) -> None:
+    repository, service = _repository(tmp_path)
+    event_id = _ingest(service, "diagnostic-event")
+    raw_secret = "super-secret-token-value"
+    raw_message = (
+        "Traceback (most recent call last):\n"
+        "  File 'worker.py', line 10\n"
+        f"Authorization: Bearer {raw_secret}\n"
+        f"api_key={raw_secret}\n"
+        + ("x" * 700)
+    )
+
+    attempt = repository.record_attempt(
+        event_id,
+        outcome="failed",
+        error_code="UPSTREAM_TIMEOUT",
+        error_message=raw_message,
+        finished=True,
+    )
+
+    assert attempt.error_message is not None
+    assert "\n" not in attempt.error_message
+    assert raw_secret not in attempt.error_message
+    assert "Bearer [REDACTED]" in attempt.error_message
+    assert "api_key=[REDACTED]" in attempt.error_message
+    assert len(attempt.error_message) <= 512
+
+
+def test_processing_error_code_rejects_raw_multiline_text(tmp_path: Path) -> None:
+    repository, service = _repository(tmp_path)
+    event_id = _ingest(service, "diagnostic-code-event")
+
+    with pytest.raises(ValueError, match="compact identifier"):
+        repository.record_attempt(
+            event_id,
+            error_code="ValueError: bad input\nTraceback follows",
+            finished=True,
+        )
