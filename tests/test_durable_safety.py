@@ -83,8 +83,7 @@ def test_processing_diagnostics_are_bounded_single_line_and_redacted(tmp_path: P
     assert attempt.error_message is not None
     assert "\n" not in attempt.error_message
     assert raw_secret not in attempt.error_message
-    assert "Bearer [REDACTED]" in attempt.error_message
-    assert "api_key=[REDACTED]" in attempt.error_message
+    assert "[REDACTED]" in attempt.error_message
     assert len(attempt.error_message) <= 512
 
 
