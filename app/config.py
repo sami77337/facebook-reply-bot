@@ -38,7 +38,7 @@ class Settings:
     fatwa_bridge_secret: str | None = field(default=None, repr=False)
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls) -> Settings:
         """Build settings from process environment variables only."""
 
         return cls(

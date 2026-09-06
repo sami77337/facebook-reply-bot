@@ -16,7 +16,7 @@ class SQLiteDatabase:
         self.busy_timeout_ms = busy_timeout_ms
 
     @classmethod
-    def from_url(cls, database_url: str, *, busy_timeout_ms: int = 5_000) -> "SQLiteDatabase":
+    def from_url(cls, database_url: str, *, busy_timeout_ms: int = 5_000) -> SQLiteDatabase:
         """Create a database factory from the configured sqlite URL."""
 
         prefix = "sqlite:///"
