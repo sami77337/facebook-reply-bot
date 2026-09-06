@@ -1,6 +1,6 @@
 import pytest
-from app.config import Settings
 
+from app.config import Settings
 
 SECRET_ENV_VARS = (
     "OPENAI_API_KEY",
