@@ -388,5 +388,5 @@ class DurableRepository:
                 ):
                     raise IdempotencyConflict(
                         "idempotency_key is already bound to a different outbound action"
-                    )
+                    ) from None
                 return OutboundActionResult(existing, False)
