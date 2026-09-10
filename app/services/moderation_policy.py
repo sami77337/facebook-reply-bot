@@ -57,6 +57,20 @@ class ModerationPolicy:
                 reasons=(ModerationReason.UNCERTAIN_VERDICT,),
             )
 
+        if assessment.verdict is ModerationVerdict.SAFE:
+            if (
+                assessment.severity is not ModerationSeverity.NONE
+                or bool(assessment.categories)
+            ):
+                return ModerationDecision(
+                    disposition=ModerationDisposition.HUMAN_REVIEW,
+                    reasons=(ModerationReason.INVALID_ASSESSMENT,),
+                )
+            return ModerationDecision(
+                disposition=ModerationDisposition.ALLOW_ROUTING,
+                reasons=(ModerationReason.EXPLICIT_SAFE,),
+            )
+
         if assessment.verdict is ModerationVerdict.UNSAFE:
             if assessment.severity in {
                 ModerationSeverity.MEDIUM,
@@ -69,12 +83,6 @@ class ModerationPolicy:
             return ModerationDecision(
                 disposition=ModerationDisposition.HUMAN_REVIEW,
                 reasons=(ModerationReason.EXPLICIT_UNSAFE,),
-            )
-
-        if assessment.verdict is ModerationVerdict.SAFE:
-            return ModerationDecision(
-                disposition=ModerationDisposition.ALLOW_ROUTING,
-                reasons=(ModerationReason.EXPLICIT_SAFE,),
             )
 
         return ModerationDecision(
