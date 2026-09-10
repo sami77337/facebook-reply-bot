@@ -142,7 +142,11 @@ CREATE TABLE IF NOT EXISTS faq_resolutions (
     CHECK (
         (status = 'resolved' AND reason_code = 'approved_entry' AND faq_entry_id IS NOT NULL)
         OR
-        (status = 'supervisor_required' AND reason_code != 'approved_entry' AND faq_entry_id IS NULL)
+        (
+            status = 'supervisor_required'
+            AND reason_code != 'approved_entry'
+            AND faq_entry_id IS NULL
+        )
     )
 );
 
