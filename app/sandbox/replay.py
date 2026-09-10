@@ -28,6 +28,7 @@ from app.domain.publishing import (
     PublicationStatus,
 )
 from app.domain.shadow import ShadowOutcome
+from app.ingress.common import ExactIngestionCollector
 from app.persistence.classification_repository import ClassificationRepository
 from app.persistence.faq_repository import FAQRepository
 from app.persistence.fatwa_repository import FatwaRepository
@@ -47,7 +48,6 @@ from app.services.moderation_policy import ModerationPolicy
 from app.services.publishing import PublishingNotEligible, PublishingService
 from app.services.shadow import ShadowService
 from app.services.supervisor import SupervisorService
-from app.ingress.common import ExactIngestionCollector
 
 
 class ReplayEvidenceConflict(RuntimeError):
@@ -190,7 +190,7 @@ class _RecordingPublisher:
             )
         )
         identity = hashlib.sha256(
-            f"{self.platform.value}\0{external_comment_id}".encode("utf-8")
+            f"{self.platform.value}\0{external_comment_id}".encode()
         ).hexdigest()[:24]
         return f"sandbox-{identity}"
 
@@ -219,17 +219,12 @@ class SandboxReplayRuntime:
         self.classification_policy = ClassificationPolicy(minimum_faq_confidence=0.80)
         self.fatwa_policy = fatwa_policy
         self.evaluator_version = evaluator_version
-        self._publishers = {
-            platform: _RecordingPublisher(platform)
-            for platform in Platform
-        }
+        self._publishers = {platform: _RecordingPublisher(platform) for platform in Platform}
 
     @property
     def recorded_calls(self) -> tuple[RecordedPublishCall, ...]:
         return tuple(
-            call
-            for platform in Platform
-            for call in self._publishers[platform].calls
+            call for platform in Platform for call in self._publishers[platform].calls
         )
 
     async def replay(self, scenarios: Iterable[ReplayScenario]) -> ReplayReport:
