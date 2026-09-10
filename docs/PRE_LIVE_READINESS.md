@@ -2,11 +2,11 @@
 
 ## Verdict
 
-**MOCK-FIRST V1 ARCHITECTURE: PASS, subject to final Phase 10 CI and review.**
+**MOCK-FIRST V1 ARCHITECTURE / PRE-LIVE AUDIT: PASS.**
 
 **LIVE PRODUCTION ACTIVATION: HOLD.**
 
-The HOLD is intentional and fail-closed. It does not indicate that the durable V1 architecture has failed. It means the repository still has unresolved production/human gates that Phase 10 is not authorized to execute automatically.
+The Phase 10 machine gate and adversarial review are complete. The HOLD is intentional and fail-closed. It does not indicate that the durable V1 architecture has failed. It means the repository still has unresolved production/human gates that Phase 10 is not authorized to execute automatically.
 
 ## Audited baseline
 
@@ -26,6 +26,19 @@ The implementation stack through that baseline contains:
 8. exact-source crash-safe publication with atomic claim and `uncertain` freeze;
 9. side-effect-free immutable Shadow Mode evaluation.
 
+## Phase 10 validation evidence
+
+GitHub Actions run `34456439765` on head
+`a7d0f88bfdb5c2371a2d4e72a60952fdd737549c` completed successfully:
+
+- Ruff — PASS
+- Mypy — PASS
+- Pytest — PASS
+
+The same run showed the CI token restricted to `Contents: read` and `Metadata: read`.
+
+An adversarial comparison of `phase/09-shadow-mode` to the Phase 10 audited head found that Phase 10 changes only readiness documentation and `tests/test_pre_live_security.py`; it does not alter production service/domain/persistence logic. No new-code blocker was identified. The review also verified that static boundary tests are not being represented as a substitute for dependency SCA, provider-specific live validation, or staging evidence; those remain explicit Human Gates.
+
 ## Gate status
 
 | Gate | Status | Evidence / interpretation |
@@ -39,9 +52,10 @@ The implementation stack through that baseline contains:
 | Publication duplicate/crash safety | PASS | Durable intent before call, atomic claim, success idempotency, and `uncertain` freeze prevent blind retry. |
 | Shadow Mode side-effect isolation | PASS | No publisher/transport dependency, no outbound action creation, no processing-state mutation. |
 | Four-platform domain support | PASS | Facebook, Instagram, Telegram, and YouTube normalized behind shared contracts. |
-| New-code direct network boundary | PENDING FINAL PHASE 10 CI | Added machine-verifiable AST/source regression tests prohibiting direct network-client imports and hardcoded HTTP endpoints in the new application boundary. |
-| CI secret isolation | PENDING FINAL PHASE 10 CI | Added test requiring no production `secrets.*` consumption in CI and read-only contents permission. |
-| `.env.example` secret values | PASS / RECHECKED BY CI | Secret placeholders are present and empty. |
+| New-code direct network boundary | PASS | Phase 10 AST/source regression tests pass and prohibit common direct network-client imports plus hardcoded HTTP endpoints in the new application boundary. |
+| CI secret isolation | PASS | CI consumes no production `secrets.*`; workflow declares read-only contents permission; run evidence reports read-only contents/metadata. |
+| `.env.example` secret values | PASS | Secret placeholders are present and empty and are rechecked by CI. |
+| Independent adversarial review | PASS | Phase 10 diff changes only audit docs/tests; no implementation bypass or hidden waiver was identified. |
 | Public tracked runtime-data hygiene | **HOLD** | Public repo still tracks `log.txt` with historical Facebook identifiers/timestamps/replies, plus legacy runtime-state/log files. |
 | Legacy auto-reply cutover | **HOLD** | `.github/workflows/bot.yml` still defines a real Facebook reply workflow on a 30-minute schedule and manual dispatch. Available run history does not establish that the workflow definition is disabled. |
 | Legacy religious regex path | **HOLD** | `responses.json` still includes religious keyword auto-reply logic outside the new FATWA boundary; it must not remain authoritative after cutover. |
@@ -112,13 +126,17 @@ Required action: ensure the legacy auto-reply path is retired or otherwise unabl
 
 The new `app/` implementation is designed mock-first. Platform modules normalize identifiers/text and delegate future I/O through injected client protocols. Production network clients are intentionally absent.
 
-Phase 10 adds regression tests that fail if new core/platform-boundary Python modules directly import common live-network/vendor clients or if the new application introduces hardcoded `http://` / `https://` endpoints.
+Phase 10 regression tests fail if new core/platform-boundary Python modules directly import common live-network/vendor clients or if the new application introduces hardcoded `http://` / `https://` endpoints.
 
-Legacy root code is intentionally excluded from that PASS claim and is documented separately as a cutover HOLD.
+These tests are guardrails, not proof that future live integrations are secure. Provider-specific clients, OAuth/webhook logic, scopes, rate limits, retry semantics, TLS/network controls, and staging behavior remain outside the current PASS and require their own live-integration gates.
+
+Legacy root code is intentionally excluded from the new-code PASS claim and is documented separately as a cutover HOLD.
 
 ## Dependency/configuration findings
 
 New project metadata currently declares Python `>=3.12`, FastAPI and Uvicorn runtime ranges, and HTTPX/Mypy/Pytest/Ruff development ranges. CI runs on Python 3.12 and installs the project from these ranges.
+
+The successful Phase 10 CI run resolved Python 3.12.14 on the hosted runner. GitHub Actions emitted a deprecation warning that `actions/checkout@v4` and `actions/setup-python@v5` target the older Node runtime and are currently being forced onto Node 24. This did not fail CI, but action-version maintenance should be included in pre-production toolchain hardening when compatible maintained releases are selected and verified.
 
 Legacy `requirements.txt` separately contains unpinned `requests`, unpinned `python-dotenv`, and `mysql-connector-python==8.1.0`.
 
@@ -151,12 +169,14 @@ Phase 10 does not:
 - merge any phase PR to `main`;
 - assert production readiness while any mandatory Human Gate remains open.
 
-## Final Phase 10 closure rule
+## Final Phase 10 closure
 
-Phase 10 may be marked **PASS AS A PRE-LIVE AUDIT/HARDENING PHASE** when:
+The Phase 10 audit/hardening closure conditions have been met:
 
-1. the Phase 10 security-regression tests pass Ruff/Mypy/Pytest on the final documentation head;
-2. independent adversarial review finds no new-code blocker;
-3. all unresolved live concerns remain explicitly recorded as HOLD/Human Gates rather than being silently waived.
+1. Phase 10 security-regression tests passed Ruff/Mypy/Pytest;
+2. adversarial review found no new-code blocker or hidden waiver;
+3. unresolved live concerns remain explicitly recorded as HOLD/Human Gates.
 
-Even after that audit PASS, **LIVE PRODUCTION ACTIVATION remains HOLD until the Human Gates are explicitly closed.**
+Therefore **Phase 10 is PASS as a pre-live audit/hardening phase**.
+
+**LIVE PRODUCTION ACTIVATION remains HOLD until the Human Gates are explicitly closed.**
