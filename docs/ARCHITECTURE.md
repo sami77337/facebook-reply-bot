@@ -43,6 +43,7 @@ The V1 durable core uses SQLite behind repository/service abstractions and conta
 - `processing_attempts`: sanitized attempt history and retry metadata.
 - `outbound_actions`: durable publish intents/results with unique idempotency keys.
 - `moderation_results`: one normalized, auditable moderation routing decision per inbound event.
+- `classification_results`: one normalized, auditable semantic route per eligible inbound event.
 
 The uniqueness boundary for inbound work is `(platform, external_event_key)`. The uniqueness boundary for outbound work is `idempotency_key`.
 
@@ -85,6 +86,39 @@ Moderation adapter exceptions are converted to a normalized human-review result.
 
 The moderation result is idempotent per `event_id`. Duplicate or racing workers resolve to the same persisted result instead of creating multiple moderation rows.
 
+### Classification boundary
+
+Semantic classification is eligible only after a durable moderation result explicitly says `allow_routing`. Missing moderation, `human_review`, or `block_routing` prevents the classifier from running.
+
+Classification is split into three responsibilities:
+
+1. A provider-neutral async `ClassificationAdapter` returns structured routing evidence only.
+2. A deterministic local `ClassificationPolicy` applies Gheras safety rules and selects the authoritative route.
+3. A durable classification repository stores one normalized result per inbound event.
+
+The only V1 semantic routes are:
+
+- `FAQ`
+- `SUPERVISOR`
+- `FATWA`
+
+The adapter does not produce user-facing answer text. Its normalized evidence is limited to routing fields such as proposed route, confidence, whether religious content may be involved, and an optional FAQ key.
+
+The local policy is authoritative. Important fail-closed rules include:
+
+- `religious_possible=true` always forces `FATWA`, even if the adapter proposed FAQ or the event has no classifiable text.
+- an explicit FATWA proposal remains `FATWA`.
+- low-confidence FAQ candidates become `SUPERVISOR`.
+- FAQ candidates without a valid compact `faq_key` become `SUPERVISOR`.
+- adapter failures and malformed structured evidence become `SUPERVISOR`, never FAQ.
+- content without classifiable text and without a religious signal becomes `SUPERVISOR`.
+
+A `FATWA` route is only a routing decision. It does not contain, create, infer, or publish a religious ruling. The later fatwa bridge remains the only boundary to the existing supervised fatwa system.
+
+`classification_results` stores normalized route evidence and audit metadata only. It deliberately has no answer, prompt, chain-of-thought, raw provider response, or provider payload column.
+
+The classification result is idempotent per `event_id`. Sequential or racing workers converge on the same persisted result.
+
 ### AI adapters
 
 Moderation and classification are separate adapters. Classification is routing-only; religious questions must never receive an AI-generated religious answer.
@@ -110,12 +144,14 @@ Publishing is separated from classification and response composition. A dispatch
 - Persist first, process later.
 - Inbound platform events are idempotent.
 - Moderation decisions are durable and idempotent per inbound event.
+- Classification decisions are durable and idempotent per eligible inbound event.
 - Outbound replies/actions are idempotent.
 - Accepted work and processing state survive process restarts.
 - SQLite foreign keys are enabled.
 - WAL mode and a sensible busy timeout are preferred where safe for V1.
 - External API failures must not silently lose accepted work.
 - Low-confidence routing escalates to a human rather than guessing.
+- Possible religious content fails toward the FATWA route rather than an automatic answer.
 - Secrets are supplied through process environment variables and are never committed.
 - Raw external payloads are not blindly persisted; store normalized fields required by the router.
 
@@ -126,3 +162,5 @@ Phase 0 established configuration, the HTTP application, adapter interfaces, tes
 Phase 1 implements the durable core and intentionally contains no real Meta, Telegram, YouTube/Google, OpenAI, or fatwa-bot calls.
 
 Phase 2 adds the mock-first moderation domain, async adapter contract, deterministic fail-closed policy, durable moderation-result repository, and idempotent moderation service. It still performs no live external moderation call and no external hide/delete/report action.
+
+Phase 3 adds the mock-first structured classification domain, async adapter contract, moderation eligibility gate, deterministic religious-safety routing policy, durable classification-result repository, and idempotent classification service. It performs no live model call and creates no user-facing answer or fatwa.

@@ -81,4 +81,24 @@ CREATE TABLE IF NOT EXISTS moderation_results (
 
 CREATE INDEX IF NOT EXISTS idx_moderation_results_disposition
 ON moderation_results (disposition, created_at);
+
+CREATE TABLE IF NOT EXISTS classification_results (
+    id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL UNIQUE,
+    route TEXT NOT NULL CHECK (route IN ('FAQ', 'SUPERVISOR', 'FATWA')),
+    reason_codes_json TEXT NOT NULL,
+    faq_key TEXT,
+    religious_possible INTEGER CHECK (
+        religious_possible IS NULL OR religious_possible IN (0, 1)
+    ),
+    confidence REAL CHECK (confidence IS NULL OR (confidence >= 0.0 AND confidence <= 1.0)),
+    adapter_name TEXT NOT NULL,
+    adapter_version TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (event_id) REFERENCES inbound_events(id) ON DELETE CASCADE,
+    CHECK ((route = 'FAQ' AND faq_key IS NOT NULL) OR (route != 'FAQ' AND faq_key IS NULL))
+);
+
+CREATE INDEX IF NOT EXISTS idx_classification_results_route
+ON classification_results (route, created_at);
 """
