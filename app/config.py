@@ -30,6 +30,7 @@ class Settings:
     log_level: str = "INFO"
     database_url: str = "sqlite:///./data/gheras_router.db"
 
+    meta_graph_api_version: str | None = None
     meta_page_id: str | None = None
     instagram_business_account_id: str | None = None
     telegram_supervisor_chat_id: str | None = None
@@ -56,6 +57,7 @@ class Settings:
             environment=_environment_name(getenv("APP_ENV")),
             log_level=getenv("LOG_LEVEL", "INFO").upper(),
             database_url=getenv("DATABASE_URL", "sqlite:///./data/gheras_router.db"),
+            meta_graph_api_version=getenv("META_GRAPH_API_VERSION"),
             meta_page_id=getenv("META_PAGE_ID"),
             instagram_business_account_id=getenv("INSTAGRAM_BUSINESS_ACCOUNT_ID"),
             telegram_supervisor_chat_id=getenv("TELEGRAM_SUPERVISOR_CHAT_ID"),
