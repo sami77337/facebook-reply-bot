@@ -41,16 +41,16 @@ class ClassificationPolicy:
     ) -> ClassificationDecision:
         """Return the local authoritative route from normalized evidence."""
 
-        if not request.has_text:
-            return ClassificationDecision(
-                route=ClassificationRoute.SUPERVISOR,
-                reasons=(ClassificationReason.NO_CLASSIFIABLE_TEXT,),
-            )
-
         if assessment.religious_possible:
             return ClassificationDecision(
                 route=ClassificationRoute.FATWA,
                 reasons=(ClassificationReason.RELIGIOUS_SAFETY_OVERRIDE,),
+            )
+
+        if not request.has_text:
+            return ClassificationDecision(
+                route=ClassificationRoute.SUPERVISOR,
+                reasons=(ClassificationReason.NO_CLASSIFIABLE_TEXT,),
             )
 
         if assessment.proposed_route is ClassificationRoute.FATWA:
