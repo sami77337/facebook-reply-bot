@@ -57,7 +57,7 @@ class PreLiveProcessResult:
     shadow_outcome: ShadowOutcome
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, repr=False)
 class PreLiveSandboxRuntime:
     """Composed V1 boundaries; external actions remain explicit caller operations."""
 
@@ -79,6 +79,9 @@ class PreLiveSandboxRuntime:
     shadow: ShadowService
     publishing: PublishingService
     ingress: IngressRuntime
+
+    def __repr__(self) -> str:
+        return "PreLiveSandboxRuntime(mode='sandbox', configured=True)"
 
     async def process_event(self, event_id: str) -> PreLiveProcessResult:
         """Advance durable routing state without dispatching any external action."""
