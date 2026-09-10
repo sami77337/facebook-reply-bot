@@ -89,6 +89,7 @@ class YouTubeDataClient(YouTubeReplyClient):
             "part": "snippet,replies",
             "videoId": video,
             "maxResults": limit,
+            "textFormat": "plainText",
         }
         if page is not None:
             params["pageToken"] = page
