@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from app.domain.events import OutboundAction, Platform
-from app.domain.publishing import PublicationSourceKind, PublicationStatus, PublishableContent
+from app.domain.publishing import PublicationStatus, PublishableContent
 from app.persistence.repositories import EventNotFound, IdempotencyConflict
 from app.persistence.sqlite import SQLiteDatabase
 
