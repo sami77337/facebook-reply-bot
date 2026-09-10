@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -22,6 +23,19 @@ class YouTubeIngestionMode(StrEnum):
     """Supported YouTube comment-ingestion mechanism for the prepared adapter."""
 
     POLL_COMMENT_THREADS = "poll_comment_threads"
+
+
+_META_VERSION_PATTERN = re.compile(r"^v[1-9][0-9]*\.[0-9]+$")
+
+
+def validate_meta_graph_api_version(value: str) -> str:
+    """Accept only a compact Meta Graph API version such as ``v26.0``."""
+
+    if not isinstance(value, str) or not _META_VERSION_PATTERN.fullmatch(value):
+        raise WebhookVerificationError("invalid Meta Graph API version")
+    if len(value) > 16:
+        raise WebhookVerificationError("Meta Graph API version is too long")
+    return value
 
 
 def _required_secret(value: str, *, field: str) -> str:
