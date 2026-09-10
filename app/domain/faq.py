@@ -60,7 +60,7 @@ class FAQResolution:
 
 @dataclass(frozen=True, slots=True)
 class FAQResolutionResult:
-    """Resolution plus answer text only when an approved active entry resolved."""
+    """Resolution plus answer text only while the exact approved entry stays active."""
 
     resolution: FAQResolution
     entry: FAQEntry | None
@@ -71,4 +71,6 @@ class FAQResolutionResult:
             return None
         if self.entry is None:
             raise RuntimeError("resolved FAQ result is missing its approved entry")
+        if self.entry.status is not FAQEntryStatus.ACTIVE:
+            return None
         return self.entry.answer_text
