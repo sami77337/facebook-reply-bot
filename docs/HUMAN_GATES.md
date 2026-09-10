@@ -56,17 +56,25 @@ Credential values must never be posted in chat or committed to the repository.
 
 ## HG-05 — Live platform adapter implementation
 
-**Status:** PREPARATION IMPLEMENTED / NETWORK CLIENTS STILL DISABLED BY DESIGN
+**Status:** SANDBOX-CAPABLE CLIENTS IMPLEMENTED / REAL PROVIDER EXECUTION NOT YET VALIDATED
 
-Phase 11 adds provider-specific security/readiness contracts, including Meta webhook verification, Telegram webhook-secret validation, YouTube polling/quota metadata, environment configuration placeholders, and redaction-safe readiness evaluation.
+Phase 11 adds provider-specific webhook/readiness security contracts. Phase 12 adds HTTP-capable provider clients for Facebook, Instagram, Telegram, and YouTube behind the dedicated `app/integrations/live/` boundary.
 
-Real OAuth/token exchange, webhook registration, polling/network transport, token refresh, and provider HTTP clients remain outside the core and require sandbox validation before activation.
+These clients are still fail-closed for real execution:
+
+- every request requires an explicitly injected `SandboxExecutionPermit`;
+- configuration values cannot create that permit;
+- there is no production execution permit in Phase 12;
+- CI uses `httpx.MockTransport` only and performs no provider calls;
+- OAuth/token exchange, webhook registration, real polling, and provider-side permission/scope validation have not been executed.
+
+Real sandbox credentials and provider-side validation remain a Human Gate because they require external accounts/secrets and real network side effects.
 
 ## HG-06 — Supervised FATWA-system integration
 
 **Status:** NOT CONNECTED BY DESIGN
 
-The Phase 7 bridge remains a durable contract. No external FATWA runtime is called by Phase 11.
+The Phase 7 bridge remains a durable contract. No external FATWA runtime is called by Phases 11–12.
 
 The real connection requires authentication material, approved-result provenance verification, and failure/reconciliation validation in sandbox/staging before activation.
 
