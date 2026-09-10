@@ -234,4 +234,67 @@ CREATE TABLE IF NOT EXISTS supervisor_responses (
 
 CREATE INDEX IF NOT EXISTS idx_supervisor_responses_received
 ON supervisor_responses (received_at);
+
+CREATE TABLE IF NOT EXISTS fatwa_bridge_requests (
+    id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL UNIQUE,
+    classification_result_id TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL CHECK (
+        status IN (
+            'pending_dispatch',
+            'awaiting_result',
+            'approved_result',
+            'rejected',
+            'cancelled'
+        )
+    ),
+    dispatch_attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (
+        dispatch_attempt_count >= 0
+    ),
+    bridge_name TEXT,
+    external_case_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (event_id) REFERENCES inbound_events(id) ON DELETE CASCADE,
+    FOREIGN KEY (classification_result_id)
+        REFERENCES classification_results(id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fatwa_bridge_external_case
+ON fatwa_bridge_requests (external_case_id)
+WHERE external_case_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_fatwa_bridge_requests_status
+ON fatwa_bridge_requests (status, created_at);
+
+CREATE TABLE IF NOT EXISTS fatwa_bridge_results (
+    id TEXT PRIMARY KEY,
+    request_id TEXT NOT NULL UNIQUE,
+    external_result_key TEXT NOT NULL UNIQUE,
+    outcome TEXT NOT NULL CHECK (outcome IN ('approved', 'rejected')),
+    answer_text TEXT,
+    approved_by TEXT,
+    source_ref TEXT NOT NULL CHECK (length(trim(source_ref)) > 0),
+    received_at TEXT NOT NULL,
+    FOREIGN KEY (request_id)
+        REFERENCES fatwa_bridge_requests(id) ON DELETE CASCADE,
+    CHECK (
+        (
+            outcome = 'approved'
+            AND answer_text IS NOT NULL
+            AND length(trim(answer_text)) > 0
+            AND approved_by IS NOT NULL
+            AND length(trim(approved_by)) > 0
+        )
+        OR
+        (
+            outcome = 'rejected'
+            AND answer_text IS NULL
+            AND approved_by IS NULL
+        )
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_fatwa_bridge_results_received
+ON fatwa_bridge_results (received_at);
 """
