@@ -395,7 +395,11 @@ def test_youtube_cross_video_payload_fails_closed(tmp_path: Path) -> None:
 
 
 def test_default_application_does_not_mount_provider_ingress_routes() -> None:
-    paths = {route.path for route in create_app().routes}
+    paths = {
+        path
+        for route in create_app().routes
+        if isinstance((path := getattr(route, "path", None)), str)
+    }
     assert "/integrations/meta/webhook" not in paths
     assert "/integrations/telegram/webhook" not in paths
 
