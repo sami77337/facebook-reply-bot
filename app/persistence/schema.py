@@ -101,4 +101,55 @@ CREATE TABLE IF NOT EXISTS classification_results (
 
 CREATE INDEX IF NOT EXISTS idx_classification_results_route
 ON classification_results (route, created_at);
+
+CREATE TABLE IF NOT EXISTS faq_entries (
+    id TEXT PRIMARY KEY,
+    faq_key TEXT NOT NULL,
+    version INTEGER NOT NULL CHECK (version > 0),
+    answer_text TEXT NOT NULL CHECK (length(trim(answer_text)) > 0),
+    source_ref TEXT NOT NULL CHECK (length(trim(source_ref)) > 0),
+    status TEXT NOT NULL CHECK (status IN ('active', 'disabled')),
+    approved_by TEXT NOT NULL CHECK (length(trim(approved_by)) > 0),
+    approved_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (faq_key, version)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_faq_entries_one_active_key
+ON faq_entries (faq_key) WHERE status = 'active';
+
+CREATE INDEX IF NOT EXISTS idx_faq_entries_key_version
+ON faq_entries (faq_key, version DESC);
+
+CREATE TABLE IF NOT EXISTS faq_resolutions (
+    id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL UNIQUE,
+    classification_result_id TEXT NOT NULL UNIQUE,
+    faq_entry_id TEXT,
+    status TEXT NOT NULL CHECK (status IN ('resolved', 'supervisor_required')),
+    reason_code TEXT NOT NULL CHECK (
+        reason_code IN (
+            'approved_entry',
+            'entry_not_found',
+            'entry_disabled',
+            'invalid_faq_key'
+        )
+    ),
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (event_id) REFERENCES inbound_events(id) ON DELETE CASCADE,
+    FOREIGN KEY (classification_result_id) REFERENCES classification_results(id) ON DELETE CASCADE,
+    FOREIGN KEY (faq_entry_id) REFERENCES faq_entries(id),
+    CHECK (
+        (status = 'resolved' AND reason_code = 'approved_entry' AND faq_entry_id IS NOT NULL)
+        OR
+        (
+            status = 'supervisor_required'
+            AND reason_code != 'approved_entry'
+            AND faq_entry_id IS NULL
+        )
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_faq_resolutions_status
+ON faq_resolutions (status, created_at);
 """
