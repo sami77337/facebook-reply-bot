@@ -2,7 +2,7 @@
 
 ## Scope
 
-V1 is a single Python service that coordinates comment/message handling for Facebook, Instagram, Telegram, and YouTube. External integrations stay behind adapters, and the existing fatwa bot remains behind a narrow integration boundary.
+V1 is a single Python service that coordinates comment/message handling for Facebook, Instagram, Telegram, and YouTube. External integrations stay behind adapters, and the supervised FATWA system remains behind a narrow integration boundary.
 
 ## High-level flow
 
@@ -27,13 +27,13 @@ Shadow Mode observes the same durable decision evidence in a separate read/audit
 
 ### HTTP application
 
-FastAPI owns health endpoints and, in later phases, inbound webhook endpoints. Importing or starting the application must not require production credentials.
+FastAPI owns health endpoints and, in later phases, authenticated inbound webhook endpoints. Importing or starting the application must not require production credentials or create network side effects.
 
 ### Platform adapters
 
 Facebook, Instagram, Telegram, and YouTube integrations implement provider-specific adapter modules while domain/services remain provider-neutral.
 
-Phase 6 implements only pure normalization plus injected client protocols. It deliberately does not implement production OAuth, webhook verification, polling, token refresh, or network clients. Stable inbound identities are normalized as follows:
+Phase 6 implements pure normalization plus injected client protocols. Stable inbound identities are normalized as follows:
 
 - Facebook: comment id.
 - Instagram: comment id.
@@ -135,11 +135,11 @@ pending_dispatch -> awaiting_response -> responded
 
 One accepted human response is allowed per escalation. Duplicate identical provider updates are idempotent; conflicting response or transport evidence fails closed.
 
-### Fatwa bot bridge
+### FATWA bridge
 
 A `FATWA` classification is only a routing decision and never contains a religious answer. Gheras cannot generate, rewrite, summarize, infer, complete, or improve a fatwa.
 
-Phase 7 adds a durable bridge boundary to an external supervised fatwa system. Eligibility requires an exact durable classification route of `FATWA`. The request lifecycle is:
+Phase 7 adds a durable bridge boundary to an external supervised FATWA system. Eligibility requires an exact durable classification route of `FATWA`. The request lifecycle is:
 
 ```text
 pending_dispatch -> awaiting_result -> approved_result
@@ -148,15 +148,15 @@ pending_dispatch -> awaiting_result -> approved_result
        └──────────────────┴────> cancelled
 ```
 
-The bridge prepares only minimal normalized question/identity data and performs no live call in this phase. Failed dispatch attempts increment a counter without storing raw provider errors. Successful dispatch records only a stable bridge name and external case id.
+The bridge prepares only minimal normalized question/identity data. Failed dispatch attempts increment a counter without storing raw provider errors. Successful dispatch records only a stable bridge name and external case id.
 
 A bridge result becomes publishable evidence only when the external result is `approved` and includes all of: non-empty answer text supplied by the supervised system, a non-empty `approved_by` value, a non-empty `source_ref`, and a stable unique external result key. A rejected result is structurally forbidden from carrying answer text or an approver.
 
-`fatwa_bridge_results` preserves the exact approved external text; Gheras does not transform it. Duplicate identical results are idempotent, while reuse of a request/result key with different semantics fails closed. The existing `telegram-fatwa-bot-v2` runtime and repository remain untouched until a separate Live Integration human gate.
+`fatwa_bridge_results` preserves the exact approved external text; Gheras does not transform it. Duplicate identical results are idempotent, while reuse of a request/result key with different semantics fails closed.
 
 ### Publishing dispatcher
 
-Phase 8 implements exact-source, mock-first origin publishing. Publication is permitted only from one of three durable sources:
+Phase 8 implements exact-source origin publishing. Publication is permitted only from one of three durable sources:
 
 - a `resolved` FAQ resolution whose exact referenced FAQ entry is still `active` at dispatch time;
 - a supervisor escalation in `responded` state with its single accepted human response;
@@ -175,7 +175,7 @@ A durable `outbound_actions` intent is created before any provider call. A worke
 
 If a provider call succeeds, the stable external result id is stored and later duplicate dispatch requests return the same durable `succeeded` action without another provider call. If an exception occurs after the provider attempt begins, the action becomes `uncertain`; it is never automatically retried because the external side effect may already have occurred. `dispatching` and `uncertain` require explicit reconciliation rather than blind resend.
 
-The default FATWA publication policy is `telegram_only`, so approved fatwa text is not automatically posted back to the origin comment unless a separate explicit policy configuration permits it. Phase 8 still uses injected/mock publishers only and performs no live platform publication.
+The default FATWA publication policy is `telegram_only`, so approved FATWA text is not automatically posted back to the origin comment unless a separate explicit policy configuration permits it.
 
 ### Shadow Mode boundary
 
@@ -197,11 +197,42 @@ Only `would_publish` may persist `source_kind`, `evidence_id`, and `proposed_tex
 
 Shadow evaluation does not create or claim `outbound_actions`, does not transition inbound processing state, and does not call adapters. Aggregate reporting exposes only counts by platform, route, and outcome plus publishable/non-publishable totals; it does not expose proposed reply text.
 
+### Pre-live security and readiness boundary
+
+Phase 10 establishes the pre-live regression/readiness gate. It verifies that mock-first core behavior remains isolated from provider networks, tracks unresolved Human Gates explicitly, and refuses to classify the system as production-ready merely because functional CI is green.
+
+Phase 11 retires the legacy scheduled/runtime path on the future active code line after the owner confirmed that the old bot is already stopped. It also adds pure provider security/readiness contracts: Meta webhook handshake/signature verification over raw bytes, Telegram webhook-secret validation, YouTube polling/quota metadata, and redaction-safe configuration readiness. Phase 11 cannot authorize live activation.
+
+### Sandbox live-network boundary
+
+Phase 12 introduces the first HTTP-capable provider implementations under the dedicated `app/integrations/live/` package. Network libraries and hard-coded provider endpoints are forbidden elsewhere by regression tests.
+
+The Phase 12 clients implement the existing Phase 6 protocols for:
+
+- Facebook Graph API comment replies;
+- Instagram Graph API comment replies;
+- Telegram reply and supervisor-message transport;
+- YouTube comment-thread polling and comment replies.
+
+Execution remains disabled by default. Every request requires an explicitly injected `SandboxExecutionPermit`; configuration or environment variables alone cannot create that permit, and Phase 12 defines no production permit. YouTube checks the permit before invoking its access-token provider.
+
+The shared HTTP boundary enforces:
+
+- HTTPS only;
+- exact provider-host allowlisting (`graph.facebook.com`, `api.telegram.org`, `www.googleapis.com`);
+- no URL userinfo, fragments, or non-443 ports;
+- redirects rejected instead of followed;
+- bounded provider-response bodies;
+- redacted transport/HTTP/protocol errors that do not include provider URLs, bodies, or credential values;
+- retryability limited to HTTP 429 and 5xx classification.
+
+Meta Graph API version is explicit configuration (`META_GRAPH_API_VERSION`) and must match the constrained `vN.N` form; no silent default is embedded in routing logic. Phase 12 tests provider request contracts exclusively through `httpx.MockTransport`; CI performs no provider calls.
+
 ## Reliability rules
 
 - Persist first, process later.
 - Inbound platform events are idempotent.
-- Moderation, classification, FAQ resolution, supervisor escalation, fatwa bridge state, and shadow audits are durable.
+- Moderation, classification, FAQ resolution, supervisor escalation, FATWA bridge state, and shadow audits are durable.
 - Duplicate/racing workers converge on one semantic durable result.
 - Outbound reply intents are persisted before external calls.
 - Concurrent publication workers cannot both claim the same pending action.
@@ -213,9 +244,11 @@ Shadow evaluation does not create or claim `outbound_actions`, does not transiti
 - External failure must not silently lose accepted work.
 - Low-confidence or uncertain routing escalates rather than guesses.
 - Possible religious content fails toward FATWA routing, never an AI-generated answer.
-- Fatwa text is publishable only after explicit external approval/provenance evidence.
+- FATWA text is publishable only after explicit external approval/provenance evidence.
 - Secrets come from environment variables and are never committed.
 - Raw external provider payloads are not blindly persisted.
+- Live-network code is isolated to the governed live-integration package.
+- Configuration presence never implies permission to perform an external action.
 
 ## Current implementation boundary
 
@@ -225,7 +258,10 @@ Shadow evaluation does not create or claim `outbound_actions`, does not transiti
 - Phase 3: mock-first routing-only classification with religious safety override.
 - Phase 4: versioned approved FAQ store and exact-key durable resolution.
 - Phase 5: durable human supervisor escalation/response workflow; no live Telegram calls.
-- Phase 6: mock-first four-platform normalizers and injected publisher/transport clients; no live network clients.
-- Phase 7: durable supervised fatwa bridge request/result lifecycle; no legacy-bot call or modification.
-- Phase 8: exact-source crash-safe publishing dispatcher with atomic claim and uncertainty freeze; injected publishers only, no live publication.
-- Phase 9: immutable side-effect-free Shadow Mode evaluation and aggregate audit reporting; no publishers, transports, outbound actions, or processing-state mutations.
+- Phase 6: four-platform normalizers and injected publisher/transport protocols.
+- Phase 7: durable supervised FATWA bridge request/result lifecycle.
+- Phase 8: exact-source crash-safe publishing dispatcher with atomic claim and uncertainty freeze.
+- Phase 9: immutable side-effect-free Shadow Mode evaluation and aggregate audit reporting.
+- Phase 10: pre-live security, regression, and final-readiness gate inventory.
+- Phase 11: live-integration security/readiness preparation plus owner-authorized active-code-line retirement of the legacy runtime path.
+- Phase 12: sandbox-capable Meta/Telegram/YouTube HTTP clients behind an explicit non-production execution permit; provider calls remain unexecuted in CI and no production activation path exists.

@@ -10,6 +10,7 @@ from app.adapters.platforms.live_security import (
     WebhookVerificationError,
     YouTubeIngestionMode,
     YouTubePollingPolicy,
+    validate_meta_graph_api_version,
     validate_telegram_webhook_secret,
     verify_meta_handshake,
     verify_meta_signature,
@@ -20,6 +21,13 @@ from app.domain.integrations import IntegrationReadinessState, IntegrationTarget
 from app.services.integration_readiness import IntegrationReadinessService
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_meta_graph_api_version_accepts_compact_version_only() -> None:
+    assert validate_meta_graph_api_version("v26.0") == "v26.0"
+    for invalid in ("26.0", "v26", "v26.0/evil", "https://evil.invalid", "v0.1"):
+        with pytest.raises(WebhookVerificationError):
+            validate_meta_graph_api_version(invalid)
 
 
 def test_meta_handshake_echoes_challenge_only_after_exact_token_match() -> None:
@@ -101,6 +109,7 @@ def test_youtube_polling_policy_uses_documented_preparation_snapshot() -> None:
 
 def _configured_settings(**overrides: object) -> Settings:
     values: dict[str, object] = {
+        "meta_graph_api_version": "v26.0",
         "meta_page_id": "page-id",
         "instagram_business_account_id": "ig-id",
         "telegram_supervisor_chat_id": "chat-id",
@@ -151,6 +160,15 @@ def test_readiness_lists_missing_variable_names_without_values() -> None:
     assert result.state is IntegrationReadinessState.MISSING_CONFIG
     assert result.missing_variables == ("META_ACCESS_TOKEN", "META_PAGE_ID")
     assert result.invalid_variables == ()
+
+
+def test_readiness_rejects_invalid_meta_version_shape() -> None:
+    settings = _configured_settings(meta_graph_api_version="v26.0/unsafe")
+    result = IntegrationReadinessService(settings).evaluate(IntegrationTarget.FACEBOOK)
+
+    assert result.state is IntegrationReadinessState.INVALID_CONFIG
+    assert result.invalid_variables == ("META_GRAPH_API_VERSION",)
+    assert result.live_activation_allowed is False
 
 
 def test_readiness_rejects_invalid_telegram_webhook_secret_shape() -> None:
