@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
 from app.adapters.contracts import ReplyPublisher
 from app.adapters.models.contracts import StructuredDecisionRequest
@@ -133,15 +134,11 @@ def test_factory_requires_explicit_sandbox_permit(tmp_path: Path) -> None:
 
 
 def test_default_fastapi_app_does_not_mount_provider_ingress() -> None:
-    paths = {
-        path
-        for route in create_app().routes
-        if isinstance((path := getattr(route, "path", None)), str)
-    }
-
-    assert "/health" in paths
-    assert "/integrations/meta/webhook" not in paths
-    assert "/integrations/telegram/webhook" not in paths
+    with TestClient(create_app()) as client:
+        assert client.get("/health").status_code == 200
+        assert client.get("/integrations/meta/webhook").status_code == 404
+        assert client.post("/integrations/meta/webhook", json={}).status_code == 404
+        assert client.post("/integrations/telegram/webhook", json={}).status_code == 404
 
 
 def test_runtime_repr_redacts_ingress_secrets(tmp_path: Path) -> None:
