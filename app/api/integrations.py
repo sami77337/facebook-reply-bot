@@ -19,6 +19,10 @@ from app.ingress.common import (
 )
 from app.ingress.meta import MetaWebhookIngress
 from app.ingress.telegram import TelegramWebhookIngress
+from app.integrations.live.activation import (
+    SandboxExecutionPermit,
+    require_sandbox_execution,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,9 +87,14 @@ def _translate_ingress_error(exc: Exception) -> HTTPException:
     raise exc
 
 
-def build_ingress_router(runtime: IngressRuntime) -> APIRouter:
-    """Build authenticated ingress routes without mounting them into the default app."""
+def build_ingress_router(
+    runtime: IngressRuntime,
+    *,
+    permit: SandboxExecutionPermit | None = None,
+) -> APIRouter:
+    """Build sandbox ingress routes only after explicit capability issuance."""
 
+    require_sandbox_execution(permit)
     router = APIRouter(prefix="/integrations", tags=["integrations"])
 
     @router.get("/meta/webhook", response_class=PlainTextResponse)
