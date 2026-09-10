@@ -37,11 +37,12 @@ Each adapter normalizes platform-specific identifiers and payloads into the shar
 
 Every accepted inbound event is persisted before moderation, classification, or publishing work begins.
 
-The V1 durable core uses SQLite behind repository/service abstractions and contains three persistent concerns:
+The V1 durable core uses SQLite behind repository/service abstractions and contains persistent concerns including:
 
 - `inbound_events`: normalized accepted events and their processing state.
 - `processing_attempts`: sanitized attempt history and retry metadata.
 - `outbound_actions`: durable publish intents/results with unique idempotency keys.
+- `moderation_results`: one normalized, auditable moderation routing decision per inbound event.
 
 The uniqueness boundary for inbound work is `(platform, external_event_key)`. The uniqueness boundary for outbound work is `idempotency_key`.
 
@@ -59,6 +60,30 @@ Core processing state changes are explicit domain transitions rather than arbitr
 - `failed_terminal`
 
 Terminal states do not transition unless a future explicit recovery mechanism is introduced.
+
+### Moderation boundary
+
+Moderation happens after persist-first ingestion and before semantic classification.
+
+The moderation design is split into three responsibilities:
+
+1. A provider-neutral async `ModerationAdapter` returns normalized moderation evidence only.
+2. A deterministic local policy maps that evidence to one routing-only disposition.
+3. A durable moderation repository stores one auditable result for the inbound event.
+
+The V1 routing-only dispositions are:
+
+- `allow_routing`: moderation evidence is explicitly safe and sufficiently confident for semantic routing to continue.
+- `human_review`: evidence is missing, uncertain, low-confidence, unsupported, malformed, or the moderation adapter failed.
+- `block_routing`: sufficiently confident unsafe evidence prevents automated semantic routing.
+
+`block_routing` is not an authorization to hide, delete, report, or otherwise mutate external content. External moderation enforcement is outside this phase and requires an explicit later policy and adapter action.
+
+Text/media coverage is fail-closed. If normalized media exists but the adapter did not actually assess it, the event cannot receive `allow_routing`. Likewise, an event with no assessable text or media goes to human review rather than being guessed safe.
+
+Moderation adapter exceptions are converted to a normalized human-review result. Raw exception traces, credentials, authorization headers, provider payloads, and secret-bearing diagnostics are not persisted in `moderation_results`.
+
+The moderation result is idempotent per `event_id`. Duplicate or racing workers resolve to the same persisted result instead of creating multiple moderation rows.
 
 ### AI adapters
 
@@ -84,6 +109,7 @@ Publishing is separated from classification and response composition. A dispatch
 
 - Persist first, process later.
 - Inbound platform events are idempotent.
+- Moderation decisions are durable and idempotent per inbound event.
 - Outbound replies/actions are idempotent.
 - Accepted work and processing state survive process restarts.
 - SQLite foreign keys are enabled.
@@ -97,4 +123,6 @@ Publishing is separated from classification and response composition. A dispatch
 
 Phase 0 established configuration, the HTTP application, adapter interfaces, tests, and CI.
 
-Phase 1 builds only the durable core. It intentionally contains no real Meta, Telegram, YouTube/Google, OpenAI, or fatwa-bot calls.
+Phase 1 implements the durable core and intentionally contains no real Meta, Telegram, YouTube/Google, OpenAI, or fatwa-bot calls.
+
+Phase 2 adds the mock-first moderation domain, async adapter contract, deterministic fail-closed policy, durable moderation-result repository, and idempotent moderation service. It still performs no live external moderation call and no external hide/delete/report action.
