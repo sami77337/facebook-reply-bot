@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from app.adapters.platforms.youtube import YouTubeAdapter, YouTubeCommentDTO
+from app.domain.events import NormalizedInboundEvent
 from app.ingress.common import (
     ExactIngestionCollector,
     IngressBatchResult,
@@ -60,7 +61,7 @@ def _decode_top_level_comment(
     *,
     expected_video_id: str,
     own_channel_id: str,
-) -> tuple[Any | None, bool]:
+) -> tuple[NormalizedInboundEvent | None, bool]:
     item = mapping(raw_item, field="youtube.items[]")
     thread_id = provider_id(item.get("id"), field="youtube.thread_id")
     thread_snippet = mapping(item.get("snippet"), field="youtube.thread.snippet")
@@ -127,7 +128,7 @@ class YouTubePollingIngress:
             raise IngressPayloadError("YouTube polling response must be an object")
 
         items = list_value(payload.get("items"), field="youtube.items")
-        normalized = []
+        normalized: list[NormalizedInboundEvent] = []
         ignored = 0
         for item in items:
             event, was_ignored = _decode_top_level_comment(
