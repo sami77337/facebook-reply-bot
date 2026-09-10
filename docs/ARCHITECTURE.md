@@ -153,7 +153,26 @@ A bridge result becomes publishable evidence only when the external result is `a
 
 ### Publishing dispatcher
 
-Publishing is separated from classification, FAQ resolution, supervisor response handling, and fatwa handling. A later dispatcher selects the correct Facebook/Instagram/Telegram/YouTube adapter and uses durable outbound action records to prevent duplicate publishing.
+Phase 8 implements exact-source, mock-first origin publishing. Publication is permitted only from one of three durable sources:
+
+- a `resolved` FAQ resolution whose exact referenced FAQ entry is still `active` at dispatch time;
+- a supervisor escalation in `responded` state with its single accepted human response;
+- a FATWA bridge request in `approved_result` state with attributed external approval evidence, and only when the explicit fatwa publication policy permits an origin reply.
+
+The dispatcher never generates, rewrites, summarizes, translates, or improves source text. The selected text is passed verbatim to the injected platform publisher.
+
+Outbound execution is crash-safe by policy:
+
+```text
+pending -> dispatching -> succeeded
+                └──────> uncertain
+```
+
+A durable `outbound_actions` intent is created before any provider call. A worker must atomically claim `pending -> dispatching` before invoking the publisher, preventing concurrent workers from both publishing the same semantic action. The deterministic idempotency key binds the event, destination platform, source kind, and exact durable evidence identity.
+
+If a provider call succeeds, the stable external result id is stored and later duplicate dispatch requests return the same durable `succeeded` action without another provider call. If an exception occurs after the provider attempt begins, the action becomes `uncertain`; it is never automatically retried because the external side effect may already have occurred. `dispatching` and `uncertain` require explicit reconciliation rather than blind resend.
+
+The default FATWA publication policy is `telegram_only`, so approved fatwa text is not automatically posted back to the origin comment unless a separate explicit policy configuration permits it. Phase 8 still uses injected/mock publishers only and performs no live platform publication.
 
 ## Reliability rules
 
@@ -161,7 +180,9 @@ Publishing is separated from classification, FAQ resolution, supervisor response
 - Inbound platform events are idempotent.
 - Moderation, classification, FAQ resolution, supervisor escalation, and fatwa bridge state are durable.
 - Duplicate/racing workers converge on one semantic durable result.
-- Outbound replies/actions are idempotent.
+- Outbound reply intents are persisted before external calls.
+- Concurrent publication workers cannot both claim the same pending action.
+- Provider-call uncertainty freezes the action for reconciliation instead of blind retry.
 - SQLite foreign keys are enabled.
 - WAL mode and busy timeout are enabled where safe.
 - External failure must not silently lose accepted work.
@@ -181,3 +202,4 @@ Publishing is separated from classification, FAQ resolution, supervisor response
 - Phase 5: durable human supervisor escalation/response workflow; no live Telegram calls.
 - Phase 6: mock-first four-platform normalizers and injected publisher/transport clients; no live network clients.
 - Phase 7: durable supervised fatwa bridge request/result lifecycle; no legacy-bot call or modification.
+- Phase 8: exact-source crash-safe publishing dispatcher with atomic claim and uncertainty freeze; injected publishers only, no live publication.
