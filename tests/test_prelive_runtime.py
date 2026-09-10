@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from app.adapters.models.contracts import StructuredDecisionRequest
 from app.adapters.contracts import ReplyPublisher
+from app.adapters.models.contracts import StructuredDecisionRequest
 from app.domain.classification import ClassificationRoute
 from app.domain.events import NormalizedInboundEvent, Platform
 from app.domain.moderation import ModerationDisposition
