@@ -7,6 +7,8 @@ from urllib.parse import quote
 import httpx
 
 from app.adapters.platforms.common import reply_text, required_id
+from app.adapters.platforms.facebook import FacebookReplyClient
+from app.adapters.platforms.instagram import InstagramReplyClient
 from app.adapters.platforms.live_security import validate_meta_graph_api_version
 from app.integrations.live.activation import SandboxExecutionPermit
 from app.integrations.live.base import ProviderProtocolError, request_json, required_response_id
@@ -30,8 +32,8 @@ def _credential(value: str, *, field: str) -> str:
     return value
 
 
-class FacebookGraphReplyClient:
-    """Implements the FacebookReplyClient protocol through an injected HTTP client."""
+class FacebookGraphReplyClient(FacebookReplyClient):
+    """FacebookReplyClient implementation through an injected HTTP client."""
 
     def __init__(
         self,
@@ -66,8 +68,8 @@ class FacebookGraphReplyClient:
         )
 
 
-class InstagramGraphReplyClient:
-    """Implements the Instagram reply-client protocol for Facebook Login mode."""
+class InstagramGraphReplyClient(InstagramReplyClient):
+    """InstagramReplyClient implementation for Facebook Login mode."""
 
     def __init__(
         self,
