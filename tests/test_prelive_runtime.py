@@ -133,7 +133,11 @@ def test_factory_requires_explicit_sandbox_permit(tmp_path: Path) -> None:
 
 
 def test_default_fastapi_app_does_not_mount_provider_ingress() -> None:
-    paths = {route.path for route in create_app().routes}
+    paths = {
+        path
+        for route in create_app().routes
+        if isinstance((path := getattr(route, "path", None)), str)
+    }
 
     assert "/health" in paths
     assert "/integrations/meta/webhook" not in paths
