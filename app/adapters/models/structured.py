@@ -71,7 +71,7 @@ def _strict_object(raw: object, allowed_keys: tuple[str, ...]) -> Mapping[str, o
 
 
 def _finite_confidence(value: object) -> float:
-    if type(value) not in {int, float}:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise StructuredOutputRejected("confidence must be a finite number")
     confidence = float(value)
     if not math.isfinite(confidence) or not 0.0 <= confidence <= 1.0:
