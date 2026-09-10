@@ -9,6 +9,7 @@ import httpx
 
 from app.adapters.platforms.common import optional_id, reply_text, required_id
 from app.adapters.platforms.live_security import YouTubePollingPolicy
+from app.adapters.platforms.youtube import YouTubeReplyClient
 from app.integrations.live.activation import (
     SandboxExecutionPermit,
     require_sandbox_execution,
@@ -42,8 +43,8 @@ def _access_token(value: str) -> str:
     return value
 
 
-class YouTubeDataClient:
-    """Implements polling/reply calls using an injected HTTP and token provider."""
+class YouTubeDataClient(YouTubeReplyClient):
+    """YouTube reply protocol plus comment-thread polling through injected HTTP."""
 
     def __init__(
         self,
