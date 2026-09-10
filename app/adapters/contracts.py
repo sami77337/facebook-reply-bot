@@ -6,6 +6,7 @@ from typing import Protocol
 
 from app.domain.classification import ClassificationAssessment, ClassificationRequest
 from app.domain.moderation import ModerationAssessment, ModerationRequest
+from app.domain.supervisor import SupervisorDispatchRequest
 
 
 class InboundCollector(Protocol):
@@ -57,4 +58,17 @@ class ClassificationAdapter(Protocol):
 
     async def classify(self, request: ClassificationRequest) -> ClassificationAssessment:
         """Return structured routing evidence; never answer the user."""
+        ...
+
+
+class SupervisorTransportAdapter(Protocol):
+    """Provider-neutral boundary for dispatching one human escalation."""
+
+    @property
+    def name(self) -> str:
+        """Stable transport identifier suitable for audit metadata."""
+        ...
+
+    async def dispatch(self, request: SupervisorDispatchRequest) -> str:
+        """Dispatch an escalation and return an external conversation/thread id."""
         ...
