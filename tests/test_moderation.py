@@ -118,6 +118,24 @@ def test_explicit_safe_text_allows_routing(tmp_path: Path) -> None:
     assert results.count_results() == 1
 
 
+def test_contradictory_safe_assessment_fails_closed(tmp_path: Path) -> None:
+    assessment = ModerationAssessment(
+        verdict=ModerationVerdict.SAFE,
+        severity=ModerationSeverity.HIGH,
+        confidence=0.99,
+        categories=(ModerationCategory.HARMFUL_CONTENT,),
+        text_assessed=True,
+    )
+    adapter = StaticModerationAdapter(assessment)
+    _, events, _, service = _build(tmp_path, adapter)
+    event_id = _ingest(events, key="contradictory-safe")
+
+    result = asyncio.run(service.moderate(event_id))
+
+    assert result.disposition is ModerationDisposition.HUMAN_REVIEW
+    assert result.reasons == (ModerationReason.INVALID_ASSESSMENT,)
+
+
 def test_explicit_high_severity_unsafe_content_blocks_routing(tmp_path: Path) -> None:
     assessment = ModerationAssessment(
         verdict=ModerationVerdict.UNSAFE,
