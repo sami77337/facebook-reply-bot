@@ -92,7 +92,11 @@ def _ingest(
     ).event.id
 
 
-def _safe_assessment(*, media_assessed: bool = False, confidence: float = 0.99) -> ModerationAssessment:
+def _safe_assessment(
+    *,
+    media_assessed: bool = False,
+    confidence: float = 0.99,
+) -> ModerationAssessment:
     return ModerationAssessment(
         verdict=ModerationVerdict.SAFE,
         severity=ModerationSeverity.NONE,
