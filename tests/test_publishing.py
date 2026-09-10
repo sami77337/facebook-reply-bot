@@ -77,7 +77,12 @@ class Fixture:
             )
         ).event.id
 
-    def classify(self, event_id: str, route: ClassificationRoute, faq_key: str | None = None) -> None:
+    def classify(
+        self,
+        event_id: str,
+        route: ClassificationRoute,
+        faq_key: str | None = None,
+    ) -> None:
         if route is ClassificationRoute.FAQ:
             decision = ClassificationDecision(
                 route=route,
