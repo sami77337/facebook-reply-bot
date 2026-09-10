@@ -61,9 +61,12 @@ def _import_roots(path: Path) -> set[str]:
 def _url_literals(path: Path) -> set[str]:
     values: set[str] = set()
     for node in ast.walk(_tree(path)):
-        if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            if node.value.startswith(("http://", "https://")):
-                values.add(node.value)
+        if (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and node.value.startswith(("http://", "https://"))
+        ):
+            values.add(node.value)
     return values
 
 
