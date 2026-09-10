@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from app.domain.classification import ClassificationAssessment, ClassificationRequest
+from app.domain.fatwa import FatwaBridgeDispatch
 from app.domain.moderation import ModerationAssessment, ModerationRequest
 from app.domain.supervisor import SupervisorDispatchRequest
 
@@ -71,4 +72,17 @@ class SupervisorTransportAdapter(Protocol):
 
     async def dispatch(self, request: SupervisorDispatchRequest) -> str:
         """Dispatch an escalation and return an external conversation/thread id."""
+        ...
+
+
+class FatwaBridgeAdapter(Protocol):
+    """Boundary for sending a question to the external supervised fatwa system."""
+
+    @property
+    def name(self) -> str:
+        """Stable bridge identifier suitable for audit metadata."""
+        ...
+
+    async def dispatch(self, request: FatwaBridgeDispatch) -> str:
+        """Dispatch a question and return a stable external case identifier."""
         ...
