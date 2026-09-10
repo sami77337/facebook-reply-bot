@@ -16,6 +16,7 @@ APPROVED_PROVIDER_HOSTS = frozenset(
         "www.googleapis.com",
     }
 )
+_MAX_RESPONSE_BYTES = 1_000_000
 
 
 class ProviderIntegrationError(RuntimeError):
@@ -71,11 +72,23 @@ def ensure_approved_url(url: str) -> httpx.URL:
             operation="validate_url",
             reason="provider host is not allowlisted",
         )
+    if parsed.port is not None:
+        raise ProviderProtocolError(
+            provider="boundary",
+            operation="validate_url",
+            reason="non-default provider port is forbidden",
+        )
     if parsed.userinfo:
         raise ProviderProtocolError(
             provider="boundary",
             operation="validate_url",
             reason="userinfo in provider URL is forbidden",
+        )
+    if parsed.fragment:
+        raise ProviderProtocolError(
+            provider="boundary",
+            operation="validate_url",
+            reason="provider URL fragment is forbidden",
         )
     return parsed
 
@@ -97,7 +110,7 @@ async def request_json(
     data: Mapping[str, str] | None = None,
     json_body: Mapping[str, Any] | None = None,
 ) -> Mapping[str, Any]:
-    """Execute one explicitly permitted request and return a JSON object only."""
+    """Execute one explicitly permitted request and return a bounded JSON object."""
 
     require_sandbox_execution(permit)
     approved_url = ensure_approved_url(url)
@@ -110,7 +123,7 @@ async def request_json(
         json=json_body,
     )
     try:
-        response = await http.send(request)
+        response = await http.send(request, follow_redirects=False)
     except httpx.HTTPError:
         raise ProviderTransportError(provider=provider, operation=operation) from None
 
@@ -120,6 +133,12 @@ async def request_json(
             operation=operation,
             status_code=response.status_code,
             retryable=_retryable_status(response.status_code),
+        )
+    if len(response.content) > _MAX_RESPONSE_BYTES:
+        raise ProviderProtocolError(
+            provider=provider,
+            operation=operation,
+            reason="response exceeds maximum size",
         )
 
     try:
