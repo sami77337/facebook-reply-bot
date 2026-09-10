@@ -97,6 +97,9 @@ def test_secret_values_are_empty_in_env_example() -> None:
         "META_APP_SECRET",
         "META_VERIFY_TOKEN",
         "TELEGRAM_BOT_TOKEN",
+        "TELEGRAM_WEBHOOK_SECRET",
+        "YOUTUBE_CLIENT_SECRET",
+        "YOUTUBE_REFRESH_TOKEN",
         "FATWA_BRIDGE_SECRET",
     }
     assert secret_keys.issubset(values)
