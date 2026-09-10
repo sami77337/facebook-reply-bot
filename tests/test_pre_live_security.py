@@ -35,6 +35,10 @@ def _python_files() -> list[Path]:
     return sorted(path for root in CORE_ROOTS for path in root.rglob("*.py"))
 
 
+def _case_id(value: Path) -> str:
+    return str(value.relative_to(PROJECT_ROOT))
+
+
 def _import_roots(path: Path) -> set[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     roots: set[str] = set()
@@ -46,7 +50,7 @@ def _import_roots(path: Path) -> set[str]:
     return roots
 
 
-@pytest.mark.parametrize("path", _python_files(), ids=lambda value: str(value.relative_to(PROJECT_ROOT)))
+@pytest.mark.parametrize("path", _python_files(), ids=_case_id)
 def test_new_core_has_no_direct_network_client_imports(path: Path) -> None:
     imported = _import_roots(path)
     assert imported.isdisjoint(FORBIDDEN_NETWORK_IMPORT_ROOTS), (
@@ -55,7 +59,7 @@ def test_new_core_has_no_direct_network_client_imports(path: Path) -> None:
     )
 
 
-@pytest.mark.parametrize("path", _python_files(), ids=lambda value: str(value.relative_to(PROJECT_ROOT)))
+@pytest.mark.parametrize("path", _python_files(), ids=_case_id)
 def test_new_core_does_not_import_legacy_bot_modules(path: Path) -> None:
     imported = _import_roots(path)
     assert imported.isdisjoint(LEGACY_IMPORT_ROOTS), (
