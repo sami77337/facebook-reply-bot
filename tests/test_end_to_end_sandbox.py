@@ -74,7 +74,12 @@ def _faq_approval(*, answer: str = FAQ_TEXT) -> ReplayFAQApproval:
     )
 
 
-def _event(platform: Platform, *, suffix: str, text: str = "متى يبدأ التسجيل؟") -> NormalizedInboundEvent:
+def _event(
+    platform: Platform,
+    *,
+    suffix: str,
+    text: str = "متى يبدأ التسجيل؟",
+) -> NormalizedInboundEvent:
     target = {
         Platform.FACEBOOK: f"fb-comment-{suffix}",
         Platform.INSTAGRAM: f"ig-comment-{suffix}",
