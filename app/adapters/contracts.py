@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from app.domain.classification import ClassificationAssessment, ClassificationRequest
 from app.domain.moderation import ModerationAssessment, ModerationRequest
 
 
@@ -38,4 +39,22 @@ class ModerationAdapter(Protocol):
 
     async def assess(self, request: ModerationRequest) -> ModerationAssessment:
         """Return normalized moderation evidence without taking external action."""
+        ...
+
+
+class ClassificationAdapter(Protocol):
+    """Structured routing-only semantic classifier boundary."""
+
+    @property
+    def name(self) -> str:
+        """Stable adapter identifier suitable for audit persistence."""
+        ...
+
+    @property
+    def version(self) -> str:
+        """Stable adapter/model version suitable for audit persistence."""
+        ...
+
+    async def classify(self, request: ClassificationRequest) -> ClassificationAssessment:
+        """Return structured routing evidence; never answer the user."""
         ...
