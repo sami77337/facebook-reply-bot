@@ -187,6 +187,18 @@ def test_religious_possible_overrides_faq_to_fatwa(tmp_path: Path) -> None:
     assert result.reasons == (ClassificationReason.RELIGIOUS_SAFETY_OVERRIDE,)
 
 
+def test_religious_possible_overrides_missing_text_to_fatwa(tmp_path: Path) -> None:
+    adapter = StaticClassificationAdapter(_faq_assessment(religious_possible=True))
+    _, events, moderation, _, service = _build(tmp_path, adapter)
+    event_id = _ingest(events, key="religious-no-text", text="   ")
+    _persist_moderation(moderation, event_id, ModerationDisposition.ALLOW_ROUTING)
+
+    result = asyncio.run(service.classify(event_id))
+
+    assert result.route is ClassificationRoute.FATWA
+    assert result.reasons == (ClassificationReason.RELIGIOUS_SAFETY_OVERRIDE,)
+
+
 def test_explicit_fatwa_route_is_preserved(tmp_path: Path) -> None:
     assessment = ClassificationAssessment(
         proposed_route=ClassificationRoute.FATWA,
