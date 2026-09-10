@@ -71,7 +71,7 @@ def ensure_approved_url(url: str) -> httpx.URL:
             operation="validate_url",
             reason="provider host is not allowlisted",
         )
-    if parsed.username is not None or parsed.password is not None:
+    if parsed.userinfo:
         raise ProviderProtocolError(
             provider="boundary",
             operation="validate_url",
