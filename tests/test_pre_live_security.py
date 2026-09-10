@@ -2,17 +2,13 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from urllib.parse import urlparse
 
 import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 APP_ROOT = PROJECT_ROOT / "app"
-CORE_ROOTS = (
-    APP_ROOT / "domain",
-    APP_ROOT / "services",
-    APP_ROOT / "persistence",
-    APP_ROOT / "adapters" / "platforms",
-)
+LIVE_ROOT = APP_ROOT / "integrations" / "live"
 
 FORBIDDEN_NETWORK_IMPORT_ROOTS = {
     "aiohttp",
@@ -29,20 +25,32 @@ LEGACY_IMPORT_ROOTS = {
     "database_config",
     "database_manager",
 }
+APPROVED_LIVE_HOSTS = {
+    "api.telegram.org",
+    "graph.facebook.com",
+    "www.googleapis.com",
+}
 
 
 def _python_files() -> list[Path]:
-    return sorted(path for root in CORE_ROOTS for path in root.rglob("*.py"))
+    return sorted(APP_ROOT.rglob("*.py"))
+
+
+def _non_live_python_files() -> list[Path]:
+    return [path for path in _python_files() if not path.is_relative_to(LIVE_ROOT)]
 
 
 def _case_id(value: Path) -> str:
     return str(value.relative_to(PROJECT_ROOT))
 
 
+def _tree(path: Path) -> ast.AST:
+    return ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+
+
 def _import_roots(path: Path) -> set[str]:
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     roots: set[str] = set()
-    for node in ast.walk(tree):
+    for node in ast.walk(_tree(path)):
         if isinstance(node, ast.Import):
             roots.update(alias.name.split(".", 1)[0] for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module:
@@ -50,8 +58,17 @@ def _import_roots(path: Path) -> set[str]:
     return roots
 
 
-@pytest.mark.parametrize("path", _python_files(), ids=_case_id)
-def test_new_core_has_no_direct_network_client_imports(path: Path) -> None:
+def _url_literals(path: Path) -> set[str]:
+    values: set[str] = set()
+    for node in ast.walk(_tree(path)):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if node.value.startswith(("http://", "https://")):
+                values.add(node.value)
+    return values
+
+
+@pytest.mark.parametrize("path", _non_live_python_files(), ids=_case_id)
+def test_network_dependencies_are_confined_to_live_boundary(path: Path) -> None:
     imported = _import_roots(path)
     assert imported.isdisjoint(FORBIDDEN_NETWORK_IMPORT_ROOTS), (
         f"{path.relative_to(PROJECT_ROOT)} imports a forbidden live-network dependency: "
@@ -60,7 +77,7 @@ def test_new_core_has_no_direct_network_client_imports(path: Path) -> None:
 
 
 @pytest.mark.parametrize("path", _python_files(), ids=_case_id)
-def test_new_core_does_not_import_legacy_bot_modules(path: Path) -> None:
+def test_new_application_does_not_import_legacy_bot_modules(path: Path) -> None:
     imported = _import_roots(path)
     assert imported.isdisjoint(LEGACY_IMPORT_ROOTS), (
         f"{path.relative_to(PROJECT_ROOT)} imports legacy runtime code: "
@@ -68,13 +85,20 @@ def test_new_core_does_not_import_legacy_bot_modules(path: Path) -> None:
     )
 
 
-def test_new_application_contains_no_hardcoded_http_endpoints() -> None:
-    offenders: list[str] = []
-    for path in sorted(APP_ROOT.rglob("*.py")):
-        text = path.read_text(encoding="utf-8")
-        if "http://" in text or "https://" in text:
-            offenders.append(str(path.relative_to(PROJECT_ROOT)))
-    assert offenders == []
+@pytest.mark.parametrize("path", _non_live_python_files(), ids=_case_id)
+def test_hardcoded_http_endpoints_are_confined_to_live_boundary(path: Path) -> None:
+    assert _url_literals(path) == set()
+
+
+def test_live_boundary_uses_https_allowlisted_hosts_only() -> None:
+    observed: set[str] = set()
+    for path in sorted(LIVE_ROOT.rglob("*.py")):
+        for value in _url_literals(path):
+            parsed = urlparse(value)
+            assert parsed.scheme == "https"
+            assert parsed.hostname in APPROVED_LIVE_HOSTS
+            observed.add(parsed.hostname or "")
+    assert observed == APPROVED_LIVE_HOSTS
 
 
 def test_ci_workflow_does_not_consume_production_secrets() -> None:
