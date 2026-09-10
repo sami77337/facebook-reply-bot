@@ -9,6 +9,7 @@ from urllib.parse import quote
 import httpx
 
 from app.adapters.platforms.common import reply_text, required_id, required_text
+from app.adapters.platforms.telegram import TelegramReplyClient, TelegramSupervisorClient
 from app.integrations.live.activation import SandboxExecutionPermit
 from app.integrations.live.base import ProviderProtocolError, request_json
 
@@ -82,8 +83,8 @@ def _reply_target(target_id: str) -> tuple[int, int]:
     return chat_id, message_id
 
 
-class TelegramBotClient:
-    """Implements reply and supervisor transport protocols via injected HTTP."""
+class TelegramBotClient(TelegramReplyClient, TelegramSupervisorClient):
+    """Reply and supervisor transport implementation via injected HTTP."""
 
     def __init__(
         self,
