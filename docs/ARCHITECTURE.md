@@ -9,16 +9,16 @@ V1 is a single Python service that coordinates comment/message handling for Face
 ```text
 Facebook  ─┐
 Instagram ─┤
-Telegram  ─┼─> Collector ─> Persist-First Core ─> Moderation ─> Classification ─┬─> Approved FAQ reply
-YouTube   ─┘                                                                     ├─> Human supervisor
-                                                                                 └─> Fatwa bot bridge
-                                                                                           │
-                                                                                           ▼
-                                                                                 Publishing Dispatcher
-                                                                                           │
-                                                                 ┌─────────────┬───────────┼───────────┐
-                                                                 ▼             ▼           ▼           ▼
-                                                              Facebook      Instagram   Telegram    YouTube
+Telegram  ─┼─> Collector ─> Persist First ─> Moderation ─> Classification ─┬─> FAQ
+YouTube   ─┘                                                                ├─> Supervisor
+                                                                            └─> Fatwa Bridge
+                                                                                     │
+                                                                                     ▼
+                                                                            Publishing Dispatcher
+                                                                                     │
+                                                            ┌────────────┬────────────┼───────────┐
+                                                            ▼            ▼            ▼           ▼
+                                                         Facebook     Instagram    Telegram    YouTube
 ```
 
 ## Boundaries
@@ -35,23 +35,25 @@ Each adapter normalizes platform-specific identifiers and payloads into the shar
 
 ### Durable event boundary
 
-Every accepted inbound event is persisted before moderation, classification, or publishing work begins.
+Every accepted inbound event is persisted before moderation, classification, FAQ resolution, supervisor handling, fatwa routing, or publishing work begins.
 
-The V1 durable core uses SQLite behind repository/service abstractions and contains persistent concerns including:
+The SQLite durable layer contains persistent concerns including:
 
-- `inbound_events`: normalized accepted events and their processing state.
+- `inbound_events`: normalized accepted events and processing state.
 - `processing_attempts`: sanitized attempt history and retry metadata.
 - `outbound_actions`: durable publish intents/results with unique idempotency keys.
-- `moderation_results`: one normalized, auditable moderation routing decision per inbound event.
-- `classification_results`: one normalized, auditable semantic route per eligible inbound event.
+- `moderation_results`: one normalized moderation decision per event.
+- `classification_results`: one normalized semantic route per eligible event.
+- `faq_entries`: immutable versioned approved operational answers.
+- `faq_resolutions`: one exact-key FAQ resolution per classified event.
+- `supervisor_escalations`: one durable human escalation per eligible event.
+- `supervisor_responses`: one accepted human response per escalation.
 
-The uniqueness boundary for inbound work is `(platform, external_event_key)`. The uniqueness boundary for outbound work is `idempotency_key`.
-
-A duplicate inbound delivery must resolve to the original internal event instead of creating a second record. A duplicate outbound intent must not create a second action.
+Inbound uniqueness is `(platform, external_event_key)`. Outbound uniqueness is `idempotency_key`. Duplicate work must resolve to the existing durable record instead of creating a second semantic action.
 
 ### Processing state machine
 
-Core processing state changes are explicit domain transitions rather than arbitrary database updates. V1 includes at least:
+Core event state changes are explicit domain transitions. V1 includes:
 
 - `received`
 - `processing`
@@ -64,103 +66,98 @@ Terminal states do not transition unless a future explicit recovery mechanism is
 
 ### Moderation boundary
 
-Moderation happens after persist-first ingestion and before semantic classification.
+Moderation occurs after persist-first ingestion and before semantic classification.
 
-The moderation design is split into three responsibilities:
+A provider-neutral async `ModerationAdapter` returns normalized evidence only. A deterministic local policy maps the evidence to one routing-only disposition:
 
-1. A provider-neutral async `ModerationAdapter` returns normalized moderation evidence only.
-2. A deterministic local policy maps that evidence to one routing-only disposition.
-3. A durable moderation repository stores one auditable result for the inbound event.
+- `allow_routing`
+- `human_review`
+- `block_routing`
 
-The V1 routing-only dispositions are:
-
-- `allow_routing`: moderation evidence is explicitly safe and sufficiently confident for semantic routing to continue.
-- `human_review`: evidence is missing, uncertain, low-confidence, unsupported, malformed, or the moderation adapter failed.
-- `block_routing`: sufficiently confident unsafe evidence prevents automated semantic routing.
-
-`block_routing` is not an authorization to hide, delete, report, or otherwise mutate external content. External moderation enforcement is outside this phase and requires an explicit later policy and adapter action.
-
-Text/media coverage is fail-closed. If normalized media exists but the adapter did not actually assess it, the event cannot receive `allow_routing`. Likewise, an event with no assessable text or media goes to human review rather than being guessed safe.
-
-Moderation adapter exceptions are converted to a normalized human-review result. Raw exception traces, credentials, authorization headers, provider payloads, and secret-bearing diagnostics are not persisted in `moderation_results`.
-
-The moderation result is idempotent per `event_id`. Duplicate or racing workers resolve to the same persisted result instead of creating multiple moderation rows.
+`block_routing` does not authorize hide/delete/report actions. Missing coverage, low confidence, malformed evidence, contradictory evidence, and adapter failure fail closed toward human review rather than automatic routing.
 
 ### Classification boundary
 
-Semantic classification is eligible only after a durable moderation result explicitly says `allow_routing`. Missing moderation, `human_review`, or `block_routing` prevents the classifier from running.
+Classification runs only after durable `allow_routing` moderation. The async adapter produces routing evidence only; the deterministic local policy is authoritative.
 
-Classification is split into three responsibilities:
-
-1. A provider-neutral async `ClassificationAdapter` returns structured routing evidence only.
-2. A deterministic local `ClassificationPolicy` applies Gheras safety rules and selects the authoritative route.
-3. A durable classification repository stores one normalized result per inbound event.
-
-The only V1 semantic routes are:
+The only V1 routes are:
 
 - `FAQ`
 - `SUPERVISOR`
 - `FATWA`
 
-The adapter does not produce user-facing answer text. Its normalized evidence is limited to routing fields such as proposed route, confidence, whether religious content may be involved, and an optional FAQ key.
+Safety rules include:
 
-The local policy is authoritative. Important fail-closed rules include:
-
-- `religious_possible=true` always forces `FATWA`, even if the adapter proposed FAQ or the event has no classifiable text.
+- `religious_possible=true` always forces `FATWA`.
 - an explicit FATWA proposal remains `FATWA`.
-- low-confidence FAQ candidates become `SUPERVISOR`.
-- FAQ candidates without a valid compact `faq_key` become `SUPERVISOR`.
-- adapter failures and malformed structured evidence become `SUPERVISOR`, never FAQ.
-- content without classifiable text and without a religious signal becomes `SUPERVISOR`.
+- low-confidence FAQ becomes `SUPERVISOR`.
+- FAQ without a valid compact key becomes `SUPERVISOR`.
+- adapter failure/malformed output becomes `SUPERVISOR`.
+- the classifier never generates user-facing answer text or a fatwa.
 
-A `FATWA` route is only a routing decision. It does not contain, create, infer, or publish a religious ruling. The later fatwa bridge remains the only boundary to the existing supervised fatwa system.
+`classification_results` deliberately stores no prompt, chain-of-thought, raw provider response, or answer payload.
 
-`classification_results` stores normalized route evidence and audit metadata only. It deliberately has no answer, prompt, chain-of-thought, raw provider response, or provider payload column.
+### Approved FAQ boundary
 
-The classification result is idempotent per `event_id`. Sequential or racing workers converge on the same persisted result.
+FAQ resolution is eligible only for a durable `FAQ` classification containing an exact key.
 
-### AI adapters
+The model never supplies the answer. Answers come only from `faq_entries`, which are versioned and preserve approval provenance (`approved_by`, `approved_at`, `source_ref`). Historical versions are not rewritten in place, and SQLite permits at most one active version for a key.
 
-Moderation and classification are separate adapters. Classification is routing-only; religious questions must never receive an AI-generated religious answer.
+Resolution is exact-key only; no fuzzy key substitution and no generated fallback are allowed. Missing, disabled, or invalid keys create `supervisor_required` resolution instead of answer text.
 
-### Approved FAQ store
+Each `faq_resolution` links the event and classification to the exact approved entry used. Duplicate/racing workers converge on one resolution. If an entry is later disabled, the historical resolution remains auditable but its answer text is no longer eligible for future publishing.
 
-Operational answers such as schedules, registration information, and links come from an approved store. The classifier may select an intent/key but may not invent the answer.
+### Human supervisor boundary
 
-### Human supervisor workflow
+Human escalation is eligible only when:
 
-Unknown or low-confidence non-religious content is routed to supervisors. Telegram is the V1 supervisor interface, but supervisor transport remains separate from core routing logic.
+1. classification is explicitly `SUPERVISOR`; or
+2. a `FAQ` classification has a durable `supervisor_required` FAQ resolution.
+
+FATWA-routed events and successfully resolved FAQ events are not eligible for this workflow.
+
+Telegram is the intended V1 supervisor transport, but transport is not the source of truth. `supervisor_escalations` and `supervisor_responses` persist workflow state independently of Telegram.
+
+The escalation lifecycle is:
+
+```text
+pending_dispatch -> awaiting_response -> responded
+       │                  │
+       └──────────────> cancelled
+```
+
+The service prepares a minimal normalized dispatch request but does not perform a live Telegram call in Phase 5. Successful external dispatch is recorded only after a transport returns a stable external thread identifier. Failed attempts increment durable attempt metadata without storing raw exception text.
+
+One accepted human response is allowed per escalation. Duplicate identical provider updates are idempotent; reuse of an external response key or escalation with different response semantics fails closed as a conflict. Supervisor responses are human-provided content and are not automatically published by this phase.
 
 ### Fatwa bot bridge
 
-The existing fatwa bot remains a separate system boundary. This service exchanges only the information required to route a question and publish an approved response. Public documentation should not expose unnecessary internal workflow details.
+The existing fatwa bot remains a separate system boundary. Gheras exchanges only the information required to route a question and consume an approved supervised result. Gheras AI must never fabricate or infer a fatwa.
 
 ### Publishing dispatcher
 
-Publishing is separated from classification and response composition. A dispatcher selects the correct adapter for Facebook, Instagram, Telegram, or YouTube and uses durable outbound action records to prevent duplicate publishing.
+Publishing is separated from classification, FAQ resolution, supervisor response handling, and fatwa handling. A later dispatcher selects the correct Facebook/Instagram/Telegram/YouTube adapter and uses durable outbound action records to prevent duplicate publishing.
 
 ## Reliability rules
 
 - Persist first, process later.
 - Inbound platform events are idempotent.
-- Moderation decisions are durable and idempotent per inbound event.
-- Classification decisions are durable and idempotent per eligible inbound event.
+- Moderation, classification, FAQ resolution, and supervisor escalation are durable.
+- Duplicate/racing workers converge on one semantic durable result.
 - Outbound replies/actions are idempotent.
-- Accepted work and processing state survive process restarts.
 - SQLite foreign keys are enabled.
-- WAL mode and a sensible busy timeout are preferred where safe for V1.
-- External API failures must not silently lose accepted work.
-- Low-confidence routing escalates to a human rather than guessing.
-- Possible religious content fails toward the FATWA route rather than an automatic answer.
-- Secrets are supplied through process environment variables and are never committed.
-- Raw external payloads are not blindly persisted; store normalized fields required by the router.
+- WAL mode and busy timeout are enabled where safe.
+- External failure must not silently lose accepted work.
+- Low-confidence or uncertain routing escalates rather than guesses.
+- Possible religious content fails toward FATWA routing, never an AI-generated answer.
+- Secrets come from environment variables and are never committed.
+- Raw external provider payloads are not blindly persisted.
 
 ## Current implementation boundary
 
-Phase 0 established configuration, the HTTP application, adapter interfaces, tests, and CI.
-
-Phase 1 implements the durable core and intentionally contains no real Meta, Telegram, YouTube/Google, OpenAI, or fatwa-bot calls.
-
-Phase 2 adds the mock-first moderation domain, async adapter contract, deterministic fail-closed policy, durable moderation-result repository, and idempotent moderation service. It still performs no live external moderation call and no external hide/delete/report action.
-
-Phase 3 adds the mock-first structured classification domain, async adapter contract, moderation eligibility gate, deterministic religious-safety routing policy, durable classification-result repository, and idempotent classification service. It performs no live model call and creates no user-facing answer or fatwa.
+- Phase 0: application/configuration/CI bootstrap.
+- Phase 1: durable event core, retries, state machine, inbound/outbound idempotency.
+- Phase 2: mock-first fail-closed moderation and durable moderation results.
+- Phase 3: mock-first routing-only classification with religious safety override.
+- Phase 4: versioned approved FAQ store and exact-key durable resolution.
+- Phase 5: durable human supervisor escalation/response workflow and transport contract, with no live Telegram calls.

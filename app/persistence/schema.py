@@ -3,7 +3,9 @@
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS inbound_events (
     id TEXT PRIMARY KEY,
-    platform TEXT NOT NULL CHECK (platform IN ('facebook', 'instagram', 'telegram', 'youtube')),
+    platform TEXT NOT NULL CHECK (
+        platform IN ('facebook', 'instagram', 'telegram', 'youtube')
+    ),
     external_event_key TEXT NOT NULL,
     external_event_id TEXT,
     external_comment_id TEXT,
@@ -51,7 +53,9 @@ ON processing_attempts (event_id, attempt_number);
 CREATE TABLE IF NOT EXISTS outbound_actions (
     id TEXT PRIMARY KEY,
     event_id TEXT NOT NULL,
-    platform TEXT NOT NULL CHECK (platform IN ('facebook', 'instagram', 'telegram', 'youtube')),
+    platform TEXT NOT NULL CHECK (
+        platform IN ('facebook', 'instagram', 'telegram', 'youtube')
+    ),
     action_type TEXT NOT NULL,
     idempotency_key TEXT NOT NULL UNIQUE,
     status TEXT NOT NULL,
@@ -74,7 +78,9 @@ CREATE TABLE IF NOT EXISTS moderation_results (
     categories_json TEXT NOT NULL,
     adapter_name TEXT NOT NULL,
     adapter_version TEXT NOT NULL,
-    confidence REAL CHECK (confidence IS NULL OR (confidence >= 0.0 AND confidence <= 1.0)),
+    confidence REAL CHECK (
+        confidence IS NULL OR (confidence >= 0.0 AND confidence <= 1.0)
+    ),
     created_at TEXT NOT NULL,
     FOREIGN KEY (event_id) REFERENCES inbound_events(id) ON DELETE CASCADE
 );
@@ -91,12 +97,17 @@ CREATE TABLE IF NOT EXISTS classification_results (
     religious_possible INTEGER CHECK (
         religious_possible IS NULL OR religious_possible IN (0, 1)
     ),
-    confidence REAL CHECK (confidence IS NULL OR (confidence >= 0.0 AND confidence <= 1.0)),
+    confidence REAL CHECK (
+        confidence IS NULL OR (confidence >= 0.0 AND confidence <= 1.0)
+    ),
     adapter_name TEXT NOT NULL,
     adapter_version TEXT NOT NULL,
     created_at TEXT NOT NULL,
     FOREIGN KEY (event_id) REFERENCES inbound_events(id) ON DELETE CASCADE,
-    CHECK ((route = 'FAQ' AND faq_key IS NOT NULL) OR (route != 'FAQ' AND faq_key IS NULL))
+    CHECK (
+        (route = 'FAQ' AND faq_key IS NOT NULL)
+        OR (route != 'FAQ' AND faq_key IS NULL)
+    )
 );
 
 CREATE INDEX IF NOT EXISTS idx_classification_results_route
@@ -126,7 +137,9 @@ CREATE TABLE IF NOT EXISTS faq_resolutions (
     event_id TEXT NOT NULL UNIQUE,
     classification_result_id TEXT NOT NULL UNIQUE,
     faq_entry_id TEXT,
-    status TEXT NOT NULL CHECK (status IN ('resolved', 'supervisor_required')),
+    status TEXT NOT NULL CHECK (
+        status IN ('resolved', 'supervisor_required')
+    ),
     reason_code TEXT NOT NULL CHECK (
         reason_code IN (
             'approved_entry',
@@ -137,10 +150,15 @@ CREATE TABLE IF NOT EXISTS faq_resolutions (
     ),
     created_at TEXT NOT NULL,
     FOREIGN KEY (event_id) REFERENCES inbound_events(id) ON DELETE CASCADE,
-    FOREIGN KEY (classification_result_id) REFERENCES classification_results(id) ON DELETE CASCADE,
+    FOREIGN KEY (classification_result_id)
+        REFERENCES classification_results(id) ON DELETE CASCADE,
     FOREIGN KEY (faq_entry_id) REFERENCES faq_entries(id),
     CHECK (
-        (status = 'resolved' AND reason_code = 'approved_entry' AND faq_entry_id IS NOT NULL)
+        (
+            status = 'resolved'
+            AND reason_code = 'approved_entry'
+            AND faq_entry_id IS NOT NULL
+        )
         OR
         (
             status = 'supervisor_required'
@@ -152,4 +170,68 @@ CREATE TABLE IF NOT EXISTS faq_resolutions (
 
 CREATE INDEX IF NOT EXISTS idx_faq_resolutions_status
 ON faq_resolutions (status, created_at);
+
+CREATE TABLE IF NOT EXISTS supervisor_escalations (
+    id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL UNIQUE,
+    source TEXT NOT NULL CHECK (
+        source IN ('classification', 'faq_resolution')
+    ),
+    classification_result_id TEXT,
+    faq_resolution_id TEXT,
+    status TEXT NOT NULL CHECK (
+        status IN (
+            'pending_dispatch',
+            'awaiting_response',
+            'responded',
+            'cancelled'
+        )
+    ),
+    dispatch_attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (
+        dispatch_attempt_count >= 0
+    ),
+    transport_name TEXT,
+    external_thread_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (event_id) REFERENCES inbound_events(id) ON DELETE CASCADE,
+    FOREIGN KEY (classification_result_id)
+        REFERENCES classification_results(id) ON DELETE CASCADE,
+    FOREIGN KEY (faq_resolution_id)
+        REFERENCES faq_resolutions(id) ON DELETE CASCADE,
+    CHECK (
+        (
+            source = 'classification'
+            AND classification_result_id IS NOT NULL
+            AND faq_resolution_id IS NULL
+        )
+        OR
+        (
+            source = 'faq_resolution'
+            AND classification_result_id IS NULL
+            AND faq_resolution_id IS NOT NULL
+        )
+    )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_supervisor_external_thread
+ON supervisor_escalations (external_thread_id)
+WHERE external_thread_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_supervisor_escalations_status
+ON supervisor_escalations (status, created_at);
+
+CREATE TABLE IF NOT EXISTS supervisor_responses (
+    id TEXT PRIMARY KEY,
+    escalation_id TEXT NOT NULL UNIQUE,
+    external_response_key TEXT NOT NULL UNIQUE,
+    supervisor_ref TEXT NOT NULL CHECK (length(trim(supervisor_ref)) > 0),
+    response_text TEXT NOT NULL CHECK (length(trim(response_text)) > 0),
+    received_at TEXT NOT NULL,
+    FOREIGN KEY (escalation_id)
+        REFERENCES supervisor_escalations(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_supervisor_responses_received
+ON supervisor_responses (received_at);
 """
