@@ -29,9 +29,16 @@ FastAPI owns health endpoints and, in later phases, inbound webhook endpoints. I
 
 ### Platform adapters
 
-Facebook, Instagram, Telegram, and YouTube integrations implement adapter contracts. Domain and routing logic must not call vendor SDKs or raw HTTP endpoints directly.
+Facebook, Instagram, Telegram, and YouTube integrations implement provider-specific adapter modules while domain/services remain provider-neutral.
 
-Each adapter normalizes platform-specific identifiers and payloads into the shared inbound event model. Platform-specific details may be preserved only where needed for correct routing/publishing and must not leak into core state-machine semantics.
+Phase 6 implements only pure normalization plus injected client protocols. It deliberately does not implement production OAuth, webhook verification, polling, token refresh, or network clients. Stable inbound identities are normalized as follows:
+
+- Facebook: comment id.
+- Instagram: comment id.
+- Telegram: `chat_id:message_id`; update id remains delivery metadata.
+- YouTube: comment id; thread id may be retained separately.
+
+Adapters preserve Arabic/Unicode text verbatim and fail closed when required identifiers or text are missing. Reply publishers and the Telegram supervisor transport delegate only to injected client protocols. Raw provider payloads are not persisted.
 
 ### Durable event boundary
 
@@ -48,6 +55,8 @@ The SQLite durable layer contains persistent concerns including:
 - `faq_resolutions`: one exact-key FAQ resolution per classified event.
 - `supervisor_escalations`: one durable human escalation per eligible event.
 - `supervisor_responses`: one accepted human response per escalation.
+- `fatwa_bridge_requests`: one durable supervised-fatwa request per FATWA event.
+- `fatwa_bridge_results`: one normalized attributed external result per bridge request.
 
 Inbound uniqueness is `(platform, external_event_key)`. Outbound uniqueness is `idempotency_key`. Duplicate work must resolve to the existing durable record instead of creating a second semantic action.
 
@@ -109,14 +118,9 @@ Each `faq_resolution` links the event and classification to the exact approved e
 
 ### Human supervisor boundary
 
-Human escalation is eligible only when:
+Human escalation is eligible only when classification is explicitly `SUPERVISOR`, or a `FAQ` classification has a durable `supervisor_required` FAQ resolution.
 
-1. classification is explicitly `SUPERVISOR`; or
-2. a `FAQ` classification has a durable `supervisor_required` FAQ resolution.
-
-FATWA-routed events and successfully resolved FAQ events are not eligible for this workflow.
-
-Telegram is the intended V1 supervisor transport, but transport is not the source of truth. `supervisor_escalations` and `supervisor_responses` persist workflow state independently of Telegram.
+FATWA-routed events and successfully resolved FAQ events are not eligible for this workflow. Telegram is the intended V1 supervisor transport, but transport is not the source of truth; SQLite holds escalation and response state.
 
 The escalation lifecycle is:
 
@@ -126,13 +130,26 @@ pending_dispatch -> awaiting_response -> responded
        └──────────────> cancelled
 ```
 
-The service prepares a minimal normalized dispatch request but does not perform a live Telegram call in Phase 5. Successful external dispatch is recorded only after a transport returns a stable external thread identifier. Failed attempts increment durable attempt metadata without storing raw exception text.
-
-One accepted human response is allowed per escalation. Duplicate identical provider updates are idempotent; reuse of an external response key or escalation with different response semantics fails closed as a conflict. Supervisor responses are human-provided content and are not automatically published by this phase.
+One accepted human response is allowed per escalation. Duplicate identical provider updates are idempotent; conflicting response or transport evidence fails closed.
 
 ### Fatwa bot bridge
 
-The existing fatwa bot remains a separate system boundary. Gheras exchanges only the information required to route a question and consume an approved supervised result. Gheras AI must never fabricate or infer a fatwa.
+A `FATWA` classification is only a routing decision and never contains a religious answer. Gheras cannot generate, rewrite, summarize, infer, complete, or improve a fatwa.
+
+Phase 7 adds a durable bridge boundary to an external supervised fatwa system. Eligibility requires an exact durable classification route of `FATWA`. The request lifecycle is:
+
+```text
+pending_dispatch -> awaiting_result -> approved_result
+                              └──────> rejected
+       │                  │
+       └──────────────────┴────> cancelled
+```
+
+The bridge prepares only minimal normalized question/identity data and performs no live call in this phase. Failed dispatch attempts increment a counter without storing raw provider errors. Successful dispatch records only a stable bridge name and external case id.
+
+A bridge result becomes publishable evidence only when the external result is `approved` and includes all of: non-empty answer text supplied by the supervised system, a non-empty `approved_by` value, a non-empty `source_ref`, and a stable unique external result key. A rejected result is structurally forbidden from carrying answer text or an approver.
+
+`fatwa_bridge_results` preserves the exact approved external text; Gheras does not transform it. Duplicate identical results are idempotent, while reuse of a request/result key with different semantics fails closed. The existing `telegram-fatwa-bot-v2` runtime and repository remain untouched until a separate Live Integration human gate.
 
 ### Publishing dispatcher
 
@@ -142,7 +159,7 @@ Publishing is separated from classification, FAQ resolution, supervisor response
 
 - Persist first, process later.
 - Inbound platform events are idempotent.
-- Moderation, classification, FAQ resolution, and supervisor escalation are durable.
+- Moderation, classification, FAQ resolution, supervisor escalation, and fatwa bridge state are durable.
 - Duplicate/racing workers converge on one semantic durable result.
 - Outbound replies/actions are idempotent.
 - SQLite foreign keys are enabled.
@@ -150,6 +167,7 @@ Publishing is separated from classification, FAQ resolution, supervisor response
 - External failure must not silently lose accepted work.
 - Low-confidence or uncertain routing escalates rather than guesses.
 - Possible religious content fails toward FATWA routing, never an AI-generated answer.
+- Fatwa text is publishable only after explicit external approval/provenance evidence.
 - Secrets come from environment variables and are never committed.
 - Raw external provider payloads are not blindly persisted.
 
@@ -160,4 +178,6 @@ Publishing is separated from classification, FAQ resolution, supervisor response
 - Phase 2: mock-first fail-closed moderation and durable moderation results.
 - Phase 3: mock-first routing-only classification with religious safety override.
 - Phase 4: versioned approved FAQ store and exact-key durable resolution.
-- Phase 5: durable human supervisor escalation/response workflow and transport contract, with no live Telegram calls.
+- Phase 5: durable human supervisor escalation/response workflow; no live Telegram calls.
+- Phase 6: mock-first four-platform normalizers and injected publisher/transport clients; no live network clients.
+- Phase 7: durable supervised fatwa bridge request/result lifecycle; no legacy-bot call or modification.
