@@ -6,6 +6,7 @@ from collections.abc import Iterable
 
 from app.adapters.platforms.live_security import (
     WebhookVerificationError,
+    validate_meta_graph_api_version,
     validate_telegram_webhook_secret,
 )
 from app.config import Settings
@@ -55,12 +56,14 @@ class IntegrationReadinessService:
     def _required_values(self, target: IntegrationTarget) -> tuple[tuple[str, str | None], ...]:
         values: dict[IntegrationTarget, tuple[tuple[str, str | None], ...]] = {
             IntegrationTarget.FACEBOOK: (
+                ("META_GRAPH_API_VERSION", self.settings.meta_graph_api_version),
                 ("META_PAGE_ID", self.settings.meta_page_id),
                 ("META_ACCESS_TOKEN", self.settings.meta_access_token),
                 ("META_APP_SECRET", self.settings.meta_app_secret),
                 ("META_VERIFY_TOKEN", self.settings.meta_verify_token),
             ),
             IntegrationTarget.INSTAGRAM: (
+                ("META_GRAPH_API_VERSION", self.settings.meta_graph_api_version),
                 ("INSTAGRAM_BUSINESS_ACCOUNT_ID", self.settings.instagram_business_account_id),
                 ("META_ACCESS_TOKEN", self.settings.meta_access_token),
                 ("META_APP_SECRET", self.settings.meta_app_secret),
@@ -88,6 +91,13 @@ class IntegrationReadinessService:
 
     def _invalid_variables(self, target: IntegrationTarget) -> tuple[str, ...]:
         invalid: list[str] = []
+        if target in {IntegrationTarget.FACEBOOK, IntegrationTarget.INSTAGRAM}:
+            version = self.settings.meta_graph_api_version
+            if version is not None and version.strip():
+                try:
+                    validate_meta_graph_api_version(version)
+                except WebhookVerificationError:
+                    invalid.append("META_GRAPH_API_VERSION")
         if target is IntegrationTarget.TELEGRAM:
             secret = self.settings.telegram_webhook_secret
             if secret is not None and secret.strip():
