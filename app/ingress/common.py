@@ -78,8 +78,8 @@ def load_json_object(raw_body: bytes) -> dict[str, Any]:
         payload = json.loads(text, object_pairs_hook=_reject_duplicate_keys)
     except IngressPayloadError:
         raise
-    except json.JSONDecodeError:
-        raise IngressPayloadError("webhook body is not valid JSON") from None
+    except (json.JSONDecodeError, RecursionError):
+        raise IngressPayloadError("webhook body is not valid bounded JSON") from None
     if not isinstance(payload, dict):
         raise IngressPayloadError("webhook JSON must be an object")
     return payload
