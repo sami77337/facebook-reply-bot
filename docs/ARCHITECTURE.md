@@ -21,6 +21,8 @@ YouTube   ─┘                                                                
                                                          Facebook     Instagram    Telegram    YouTube
 ```
 
+Shadow Mode observes the same durable decision evidence in a separate read/audit path and performs no publication or transport action.
+
 ## Boundaries
 
 ### HTTP application
@@ -57,6 +59,7 @@ The SQLite durable layer contains persistent concerns including:
 - `supervisor_responses`: one accepted human response per escalation.
 - `fatwa_bridge_requests`: one durable supervised-fatwa request per FATWA event.
 - `fatwa_bridge_results`: one normalized attributed external result per bridge request.
+- `shadow_evaluations`: immutable side-effect-free observations keyed by event and evaluator version.
 
 Inbound uniqueness is `(platform, external_event_key)`. Outbound uniqueness is `idempotency_key`. Duplicate work must resolve to the existing durable record instead of creating a second semantic action.
 
@@ -174,15 +177,37 @@ If a provider call succeeds, the stable external result id is stored and later d
 
 The default FATWA publication policy is `telegram_only`, so approved fatwa text is not automatically posted back to the origin comment unless a separate explicit policy configuration permits it. Phase 8 still uses injected/mock publishers only and performs no live platform publication.
 
+### Shadow Mode boundary
+
+Phase 9 adds an evaluation-only path over the durable evidence produced by earlier phases. `ShadowService` has no publisher or transport dependency and therefore cannot dispatch replies, supervisor messages, FATWA requests, webhooks, or provider calls.
+
+Moderation remains authoritative in Shadow Mode. A missing moderation result is `not_ready`; `block_routing` is `blocked`; and `human_review` becomes `would_wait_human`. Semantic classification is consulted only after durable `allow_routing`.
+
+The normalized shadow outcomes are:
+
+- `would_publish`: exact durable content is eligible for origin publication under the current policy;
+- `would_wait_human`: human supervision is required or still pending;
+- `would_route_fatwa`: the event belongs to the supervised FATWA path, including approved FATWA evidence when the default `telegram_only` policy still forbids an origin reply;
+- `not_ready`: required durable evidence has not yet been produced;
+- `blocked`: authoritative evidence or terminal state prevents the evaluated action.
+
+Only `would_publish` may persist `source_kind`, `evidence_id`, and `proposed_text`. SQLite enforces this invariant. The proposed text is copied exactly from an active approved FAQ entry, an accepted human supervisor response, or an externally approved FATWA result when policy permits origin publication. Other outcomes cannot carry proposed reply text.
+
+`shadow_evaluations` is unique on `(event_id, evaluator_version)`. Duplicate and racing identical evaluations converge on one immutable row. If the same event/evaluator-version key is later recomputed with different semantics, persistence raises a conflict rather than silently rewriting historical evidence. A new evaluator version is required for a new immutable observation contract.
+
+Shadow evaluation does not create or claim `outbound_actions`, does not transition inbound processing state, and does not call adapters. Aggregate reporting exposes only counts by platform, route, and outcome plus publishable/non-publishable totals; it does not expose proposed reply text.
+
 ## Reliability rules
 
 - Persist first, process later.
 - Inbound platform events are idempotent.
-- Moderation, classification, FAQ resolution, supervisor escalation, and fatwa bridge state are durable.
+- Moderation, classification, FAQ resolution, supervisor escalation, fatwa bridge state, and shadow audits are durable.
 - Duplicate/racing workers converge on one semantic durable result.
 - Outbound reply intents are persisted before external calls.
 - Concurrent publication workers cannot both claim the same pending action.
 - Provider-call uncertainty freezes the action for reconciliation instead of blind retry.
+- Shadow Mode creates no external side effect or outbound publication intent.
+- Shadow observations are immutable per event/evaluator version and conflicting recomputation fails closed.
 - SQLite foreign keys are enabled.
 - WAL mode and busy timeout are enabled where safe.
 - External failure must not silently lose accepted work.
@@ -203,3 +228,4 @@ The default FATWA publication policy is `telegram_only`, so approved fatwa text 
 - Phase 6: mock-first four-platform normalizers and injected publisher/transport clients; no live network clients.
 - Phase 7: durable supervised fatwa bridge request/result lifecycle; no legacy-bot call or modification.
 - Phase 8: exact-source crash-safe publishing dispatcher with atomic claim and uncertainty freeze; injected publishers only, no live publication.
+- Phase 9: immutable side-effect-free Shadow Mode evaluation and aggregate audit reporting; no publishers, transports, outbound actions, or processing-state mutations.

@@ -297,4 +297,63 @@ CREATE TABLE IF NOT EXISTS fatwa_bridge_results (
 
 CREATE INDEX IF NOT EXISTS idx_fatwa_bridge_results_received
 ON fatwa_bridge_results (received_at);
+
+CREATE TABLE IF NOT EXISTS shadow_evaluations (
+    id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL,
+    correlation_id TEXT NOT NULL CHECK (length(trim(correlation_id)) > 0),
+    platform TEXT NOT NULL CHECK (
+        platform IN ('facebook', 'instagram', 'telegram', 'youtube')
+    ),
+    evaluator_version TEXT NOT NULL CHECK (
+        length(trim(evaluator_version)) > 0
+        AND length(evaluator_version) <= 80
+    ),
+    observed_route TEXT CHECK (
+        observed_route IS NULL OR observed_route IN ('FAQ', 'SUPERVISOR', 'FATWA')
+    ),
+    outcome TEXT NOT NULL CHECK (
+        outcome IN (
+            'would_publish',
+            'would_wait_human',
+            'would_route_fatwa',
+            'not_ready',
+            'blocked'
+        )
+    ),
+    source_kind TEXT CHECK (
+        source_kind IS NULL OR source_kind IN ('faq', 'supervisor', 'fatwa')
+    ),
+    evidence_id TEXT,
+    proposed_text TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (event_id) REFERENCES inbound_events(id) ON DELETE CASCADE,
+    UNIQUE (event_id, evaluator_version),
+    CHECK (
+        (
+            outcome = 'would_publish'
+            AND source_kind IS NOT NULL
+            AND evidence_id IS NOT NULL
+            AND length(trim(evidence_id)) > 0
+            AND proposed_text IS NOT NULL
+            AND length(trim(proposed_text)) > 0
+        )
+        OR
+        (
+            outcome != 'would_publish'
+            AND source_kind IS NULL
+            AND evidence_id IS NULL
+            AND proposed_text IS NULL
+        )
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_shadow_evaluations_outcome
+ON shadow_evaluations (outcome, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_shadow_evaluations_platform
+ON shadow_evaluations (platform, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_shadow_evaluations_route
+ON shadow_evaluations (observed_route, created_at);
 """
