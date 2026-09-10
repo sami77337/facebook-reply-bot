@@ -47,7 +47,6 @@ class ShadowService:
     def evaluate(self, event_id: str) -> ShadowEvaluation:
         """Compute and persist one immutable shadow observation for an event."""
 
-        event = self.events.get_event(event_id)
         moderation = self.moderation.get_for_event(event_id)
 
         if moderation is None:
