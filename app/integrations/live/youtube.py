@@ -9,7 +9,10 @@ import httpx
 
 from app.adapters.platforms.common import optional_id, reply_text, required_id
 from app.adapters.platforms.live_security import YouTubePollingPolicy
-from app.integrations.live.activation import SandboxExecutionPermit
+from app.integrations.live.activation import (
+    SandboxExecutionPermit,
+    require_sandbox_execution,
+)
 from app.integrations.live.base import ProviderProtocolError, request_json, required_response_id
 
 _YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3"
@@ -56,6 +59,7 @@ class YouTubeDataClient:
         self._polling_policy = polling_policy or YouTubePollingPolicy()
 
     async def _authorization_header(self) -> Mapping[str, str]:
+        require_sandbox_execution(self._permit)
         token = _access_token(await self._token_provider.get_access_token())
         return {"Authorization": f"Bearer {token}"}
 
@@ -68,7 +72,11 @@ class YouTubeDataClient:
     ) -> Mapping[str, Any]:
         video = required_id(video_id, field="video_id")
         page = optional_id(page_token, field="page_token")
-        limit = max_results or self._polling_policy.max_results_per_page
+        limit = (
+            self._polling_policy.max_results_per_page
+            if max_results is None
+            else max_results
+        )
         if not 1 <= limit <= self._polling_policy.max_results_per_page:
             raise ProviderProtocolError(
                 provider="youtube",
