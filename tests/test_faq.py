@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
@@ -333,22 +334,21 @@ def test_all_v1_platforms_share_exact_faq_resolution_semantics(
 def test_faq_resolution_foreign_keys_are_enforced(tmp_path: Path) -> None:
     database, _, _, _, _ = _build(tmp_path)
 
-    with database.connect() as connection:
-        with pytest.raises(Exception):
-            connection.execute(
-                """
-                INSERT INTO faq_resolutions (
-                    id, event_id, classification_result_id, faq_entry_id,
-                    status, reason_code, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    "bad-resolution",
-                    "missing-event",
-                    "missing-classification",
-                    None,
-                    "supervisor_required",
-                    "entry_not_found",
-                    "2026-09-10T07:00:00+00:00",
-                ),
-            )
+    with database.connect() as connection, pytest.raises(sqlite3.IntegrityError):
+        connection.execute(
+            """
+            INSERT INTO faq_resolutions (
+                id, event_id, classification_result_id, faq_entry_id,
+                status, reason_code, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "bad-resolution",
+                "missing-event",
+                "missing-classification",
+                None,
+                "supervisor_required",
+                "entry_not_found",
+                "2026-09-10T07:00:00+00:00",
+            ),
+        )
