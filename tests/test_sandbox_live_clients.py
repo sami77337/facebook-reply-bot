@@ -148,6 +148,7 @@ def test_youtube_list_and_reply_match_verified_data_api_contracts() -> None:
             assert request.url.params["part"] == "snippet,replies"
             assert request.url.params["videoId"] == "video-123"
             assert request.url.params["maxResults"] == "25"
+            assert request.url.params["textFormat"] == "plainText"
             assert request.url.params["pageToken"] == "page-2"
             return httpx.Response(200, json={"items": [], "nextPageToken": "page-3"})
 
