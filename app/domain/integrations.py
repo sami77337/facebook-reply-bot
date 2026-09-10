@@ -38,6 +38,8 @@ class IntegrationReadiness:
             raise ValueError("missing_config requires missing variable names")
         if self.state is IntegrationReadinessState.INVALID_CONFIG and not self.invalid_variables:
             raise ValueError("invalid_config requires invalid variable names")
-        if self.state is IntegrationReadinessState.READY_FOR_SANDBOX_VALIDATION:
-            if self.missing_variables or self.invalid_variables:
-                raise ValueError("ready readiness cannot contain configuration findings")
+        if (
+            self.state is IntegrationReadinessState.READY_FOR_SANDBOX_VALIDATION
+            and (self.missing_variables or self.invalid_variables)
+        ):
+            raise ValueError("ready readiness cannot contain configuration findings")
