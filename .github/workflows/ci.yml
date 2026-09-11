@@ -32,28 +32,43 @@ jobs:
 
       - name: Install project
         run: |
-          python -m pip install --disable-pip-version-check pip==26.2.1
+          python -m pip install --disable-pip-version-check -r requirements-build.lock
           python -m pip install --disable-pip-version-check -e '.[dev,security]'
+
+      - name: Verify production lock metadata
+        run: python scripts/verify_prod_lock.py
 
       - name: Dependency consistency
         run: python -m pip check
 
-      - name: Point-in-time dependency audit
-        run: python -m pip_audit --progress-spinner off .
+      - name: Audit locked production dependencies
+        run: python -m pip_audit --progress-spinner off -r requirements-prod.lock
 
-      - name: Resolve production lock candidate
+      - name: Audit locked build tooling
+        run: python -m pip_audit --progress-spinner off -r requirements-build.lock
+
+      - name: Audit CI and development environment
+        run: python -m pip_audit --local --skip-editable --progress-spinner off
+
+      - name: Reproduce production environment from lock
         run: |
           python -m venv /tmp/gheras-prod
-          /tmp/gheras-prod/bin/python -m pip install --disable-pip-version-check pip==26.2.1
-          /tmp/gheras-prod/bin/python -m pip install --disable-pip-version-check .
-          echo '=== GHERAS_PROD_LOCK_BEGIN ==='
+          /tmp/gheras-prod/bin/python -m pip install --disable-pip-version-check \
+            -r requirements-build.lock
+          /tmp/gheras-prod/bin/python -m pip install --disable-pip-version-check \
+            -r requirements-prod.lock
+          /tmp/gheras-prod/bin/python -m pip install --disable-pip-version-check \
+            --no-deps .
+          /tmp/gheras-prod/bin/python -m pip check
+          grep -Ev '^\s*(#|$)' requirements-prod.lock \
+            | LC_ALL=C sort > /tmp/expected-prod.lock
           /tmp/gheras-prod/bin/python -m pip freeze --all \
-            | grep -Ev '^(gheras-social-router|pip|setuptools)==' \
-            | LC_ALL=C sort
-          echo '=== GHERAS_PROD_LOCK_END ==='
+            | grep -Ev '^(gheras-social-router @|pip==|setuptools==)' \
+            | LC_ALL=C sort > /tmp/resolved-prod.lock
+          diff -u /tmp/expected-prod.lock /tmp/resolved-prod.lock
 
       - name: Ruff
-        run: ruff check app tests
+        run: ruff check app tests scripts
 
       - name: Mypy
         run: mypy app
