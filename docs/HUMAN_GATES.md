@@ -74,7 +74,7 @@ Real sandbox credentials and provider-side validation remain a Human Gate becaus
 
 **Status:** NOT CONNECTED BY DESIGN
 
-The Phase 7 bridge remains a durable contract. No external FATWA runtime is called by Phases 11–17.
+The Phase 7 bridge remains a durable contract. No external FATWA runtime is called by Phases 11–18.
 
 The real connection requires authentication material, approved-result provenance verification, and failure/reconciliation validation in sandbox/staging before activation.
 
@@ -117,18 +117,34 @@ No production reply publishing is authorized during this gate.
 
 ## HG-10 — Production configuration and operations
 
-**Status:** REQUIRED / PREPARATION CONTINUES NON-LIVE
+**Status:** ENGINEERING PREPARATION PASS IN PHASE 18 / ENVIRONMENT-SPECIFIC ACTIVATION HOLD
 
-Before production activation, finalize:
+Phase 18 completes the non-live operational preparation layer:
 
-- deployment environment and database location/backup policy;
-- log retention and redaction policy;
-- operational ownership for `dispatching`/`uncertain` reconciliation;
-- monitoring and alerting;
-- webhook/network ingress controls;
-- rollback/cutover procedure.
+- a provider-neutral production operations/runbook and explicit activation checklist are defined;
+- read-only operational readiness reports counts/state only and does not select comment/reply text or secrets;
+- SQLite integrity and foreign-key checks are available without creating or mutating a missing database;
+- verified SQLite-native backup refuses implicit overwrite, verifies the new backup, and emits SHA-256 evidence;
+- publication `dispatching`/`uncertain` holds are visible through a content-free reconciliation inventory;
+- publication reconciliation is durable, idempotent, and atomic: provider-confirmed success closes an action as `succeeded`, while provider-confirmed non-delivery returns it to `pending` without publishing anything;
+- reconciliation requires explicit operator/evidence references and never performs a blind retry;
+- logging/redaction, monitoring classes, backup/restore, cutover, rollback, and incident priorities are documented;
+- local operational CLIs are provided for readiness, verified backup, and guarded reconciliation without provider calls.
 
-Non-live runbook and validation tooling may be prepared before these owner/environment decisions are made. Production activation remains blocked until the final environment-specific choices are reviewed.
+The following remain Human Gates because they depend on the actual deployment environment or external systems:
+
+- production OS/architecture and runtime/process topology;
+- persistent SQLite volume/filesystem selection and validation;
+- approved secret store and credential rotation ownership;
+- backup retention/access policy and a production-equivalent restore rehearsal;
+- monitoring destination, service targets, and alert thresholds;
+- TLS termination, public ingress, and network controls;
+- real provider sandbox validation and scopes;
+- supervised FATWA live integration;
+- staging Shadow acceptance;
+- explicit production publication activation.
+
+Production activation remains blocked until those environment-specific choices and rehearsals are completed. Phase 18 does not deploy or modify any live provider configuration.
 
 ## HG-11 — Merge/promotion to `main`
 
