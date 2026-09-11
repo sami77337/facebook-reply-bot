@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -114,7 +115,7 @@ def test_failed_backup_does_not_leave_invalid_destination(tmp_path: Path) -> Non
     source.write_bytes(b"not-a-sqlite-database")
     destination = tmp_path / "backup.db"
 
-    with pytest.raises(Exception):
+    with pytest.raises(sqlite3.DatabaseError):
         create_verified_backup(SQLiteDatabase(source), destination)
 
     assert not destination.exists()
