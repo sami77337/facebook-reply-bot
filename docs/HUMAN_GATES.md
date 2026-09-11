@@ -74,7 +74,7 @@ Real sandbox credentials and provider-side validation remain a Human Gate becaus
 
 **Status:** NOT CONNECTED BY DESIGN
 
-The Phase 7 bridge remains a durable contract. No external FATWA runtime is called by Phases 11–18.
+The Phase 7 bridge remains a durable contract. No external FATWA runtime is called by Phases 11–19.
 
 The real connection requires authentication material, approved-result provenance verification, and failure/reconciliation validation in sandbox/staging before activation.
 
@@ -109,9 +109,21 @@ A wheel/hash lock is intentionally deferred until the production OS/architecture
 
 ## HG-09 — Staging Shadow Mode evaluation
 
-**Status:** REQUIRED BEFORE LIVE PUBLISHING
+**Status:** EVIDENCE HARNESS READY IN PHASE 19 / REPRESENTATIVE EVALUATION HOLD
 
-Run the router against representative sandbox/staging or safely replayed data in Shadow Mode. Review route/outcome aggregates and investigate unexpected `blocked`, `not_ready`, `would_wait_human`, and `would_route_fatwa` cases before permitting live publication.
+Phase 19 prepares the evidence and review layer without claiming the staging gate has passed:
+
+- Shadow evidence reporting is read-only and content-free;
+- one exact `evaluator_version` must be selected explicitly;
+- missing evaluator-version evidence fails closed rather than producing a zero-count pseudo-result;
+- counts are reported by platform, observed route, and Shadow outcome;
+- all aggregate dimensions must reconcile to the same selected evaluator-version total;
+- the report records the first/last persisted timestamps and a deterministic SHA-256 over the aggregate evidence;
+- `scripts/ops_shadow_report.py` emits the machine-readable report without selecting proposed reply text or inbound user content;
+- `docs/STAGING_SHADOW_EVALUATION_PROTOCOL.md` defines dataset identity, evaluator identity, safe execution, aggregate evidence, anomaly review, comparison rules, and the minimum acceptance record;
+- no universal acceptance percentage is invented by code.
+
+The actual HG-09 PASS still requires representative sandbox/staging or safely replayed data, an identified dataset/corpus, execution through the governed Shadow path with publishing disabled, anomaly review, and an explicit `PASS`, `HOLD`, or `REJECT` decision. Synthetic/unit tests do not satisfy this gate.
 
 No production reply publishing is authorized during this gate.
 
