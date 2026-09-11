@@ -74,10 +74,9 @@ def create_verified_backup(
     target_path.parent.mkdir(parents=True, exist_ok=True)
     created = False
     try:
-        with database.connect_readonly() as source:
-            with sqlite3.connect(target_path) as target:
-                created = True
-                source.backup(target)
+        with database.connect_readonly() as source, sqlite3.connect(target_path) as target:
+            created = True
+            source.backup(target)
 
         integrity = inspect_database(SQLiteDatabase(target_path))
         if not integrity.acceptable:
