@@ -83,7 +83,8 @@ class ClassificationService:
 
         if not self._routing_is_allowed(event_id):
             raise ClassificationNotEligible(
-                "classification requires durable moderation permission to route"
+                "classification requires durable moderation allow_routing "
+                "or an approved human review"
             )
 
         existing = self.results.get_for_event(event_id)
