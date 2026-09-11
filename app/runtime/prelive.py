@@ -17,6 +17,10 @@ from app.domain.classification import ClassificationRoute
 from app.domain.events import Platform
 from app.domain.faq import FAQResolutionStatus
 from app.domain.moderation import ModerationDisposition
+from app.domain.moderation_review import (
+    ModerationHumanDecision,
+    ModerationHumanReviewStatus,
+)
 from app.domain.publishing import FatwaPublicationPolicy
 from app.domain.shadow import ShadowOutcome
 from app.ingress.common import ExactIngestionCollector
@@ -30,6 +34,7 @@ from app.persistence.classification_repository import ClassificationRepository
 from app.persistence.faq_repository import FAQRepository
 from app.persistence.fatwa_repository import FatwaRepository
 from app.persistence.moderation_repository import ModerationRepository
+from app.persistence.moderation_review_repository import ModerationReviewRepository
 from app.persistence.publishing_repository import PublishingRepository
 from app.persistence.repositories import DurableRepository
 from app.persistence.shadow_repository import ShadowRepository
@@ -42,6 +47,7 @@ from app.services.fatwa import FatwaService
 from app.services.ingestion import IngestionService
 from app.services.moderation import ModerationService
 from app.services.moderation_policy import ModerationPolicy
+from app.services.moderation_review import ModerationReviewService
 from app.services.publishing import PublishingService
 from app.services.shadow import ShadowService
 from app.services.supervisor import SupervisorService
@@ -64,6 +70,7 @@ class PreLiveSandboxRuntime:
     database: SQLiteDatabase
     events: DurableRepository
     moderation_results: ModerationRepository
+    moderation_review_results: ModerationReviewRepository
     classification_results: ClassificationRepository
     faqs: FAQRepository
     supervisors: SupervisorRepository
@@ -72,6 +79,7 @@ class PreLiveSandboxRuntime:
     shadows: ShadowRepository
     ingestion: IngestionService
     moderation: ModerationService
+    moderation_review: ModerationReviewService
     classification: ClassificationService
     faq: FAQService
     supervisor: SupervisorService
@@ -87,7 +95,7 @@ class PreLiveSandboxRuntime:
         """Advance durable routing state without dispatching any external action."""
 
         moderation = await self.moderation.moderate(event_id)
-        if moderation.disposition is not ModerationDisposition.ALLOW_ROUTING:
+        if moderation.disposition is ModerationDisposition.BLOCK_ROUTING:
             shadow = self.shadow.evaluate(event_id)
             return PreLiveProcessResult(
                 event_id=event_id,
@@ -95,6 +103,26 @@ class PreLiveSandboxRuntime:
                 route=None,
                 shadow_outcome=shadow.outcome,
             )
+
+        if moderation.disposition is ModerationDisposition.HUMAN_REVIEW:
+            review = self.moderation_review.ensure_review(event_id)
+            if review.status is ModerationHumanReviewStatus.PENDING:
+                return PreLiveProcessResult(
+                    event_id=event_id,
+                    moderation_disposition=moderation.disposition,
+                    route=None,
+                    shadow_outcome=ShadowOutcome.WOULD_WAIT_HUMAN,
+                )
+            if review.decision is ModerationHumanDecision.BLOCK_ROUTING:
+                shadow = self.shadow.evaluate(event_id)
+                return PreLiveProcessResult(
+                    event_id=event_id,
+                    moderation_disposition=moderation.disposition,
+                    route=None,
+                    shadow_outcome=shadow.outcome,
+                )
+            if review.decision is not ModerationHumanDecision.ALLOW_ROUTING:
+                raise RuntimeError("resolved moderation review has invalid decision")
 
         classification = await self.classification.classify(event_id)
         if classification.route is ClassificationRoute.FAQ:
@@ -135,6 +163,7 @@ def create_prelive_sandbox_runtime(
     database.initialize()
     events = DurableRepository(database)
     moderation_results = ModerationRepository(database)
+    moderation_review_results = ModerationReviewRepository(database)
     classification_results = ClassificationRepository(database)
     faqs = FAQRepository(database)
     supervisors = SupervisorRepository(database)
@@ -150,12 +179,17 @@ def create_prelive_sandbox_runtime(
         adapter=StructuredModerationAdapter(moderation_client),
         policy=ModerationPolicy(minimum_confidence=0.80),
     )
+    moderation_review = ModerationReviewService(
+        moderation=moderation_results,
+        reviews=moderation_review_results,
+    )
     classification = ClassificationService(
         events=events,
         moderation=moderation_results,
         results=classification_results,
         adapter=StructuredClassificationAdapter(classification_client),
         policy=ClassificationPolicy(minimum_faq_confidence=0.80),
+        moderation_reviews=moderation_review_results,
     )
     faq = FAQService(classifications=classification_results, faqs=faqs)
     supervisor = SupervisorService(
@@ -179,6 +213,7 @@ def create_prelive_sandbox_runtime(
         shadows=shadows,
         evaluator_version=evaluator_version,
         fatwa_policy=fatwa_policy,
+        moderation_reviews=moderation_review_results,
     )
     publishing = PublishingService(
         events=events,
@@ -203,6 +238,7 @@ def create_prelive_sandbox_runtime(
         database=database,
         events=events,
         moderation_results=moderation_results,
+        moderation_review_results=moderation_review_results,
         classification_results=classification_results,
         faqs=faqs,
         supervisors=supervisors,
@@ -211,6 +247,7 @@ def create_prelive_sandbox_runtime(
         shadows=shadows,
         ingestion=ingestion,
         moderation=moderation,
+        moderation_review=moderation_review,
         classification=classification,
         faq=faq,
         supervisor=supervisor,
