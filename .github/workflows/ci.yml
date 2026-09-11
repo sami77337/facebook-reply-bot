@@ -16,22 +16,41 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
           cache: pip
 
       - name: Install project
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e '.[dev]'
+          python -m pip install --disable-pip-version-check pip==26.2.1
+          python -m pip install --disable-pip-version-check -e '.[dev,security]'
+
+      - name: Dependency consistency
+        run: python -m pip check
+
+      - name: Point-in-time dependency audit
+        run: python -m pip_audit --progress-spinner off .
+
+      - name: Resolve production lock candidate
+        run: |
+          python -m venv /tmp/gheras-prod
+          /tmp/gheras-prod/bin/python -m pip install --disable-pip-version-check pip==26.2.1
+          /tmp/gheras-prod/bin/python -m pip install --disable-pip-version-check .
+          echo '=== GHERAS_PROD_LOCK_BEGIN ==='
+          /tmp/gheras-prod/bin/python -m pip freeze --all \
+            | grep -Ev '^(gheras-social-router|pip|setuptools)==' \
+            | LC_ALL=C sort
+          echo '=== GHERAS_PROD_LOCK_END ==='
 
       - name: Ruff
         run: ruff check app tests
