@@ -11,6 +11,7 @@ from app.integrations.live.activation import SandboxExecutionPermit, require_san
 
 APPROVED_PROVIDER_HOSTS = frozenset(
     {
+        "api.openai.com",
         "api.telegram.org",
         "graph.facebook.com",
         "www.googleapis.com",

@@ -88,6 +88,45 @@ CREATE TABLE IF NOT EXISTS moderation_results (
 CREATE INDEX IF NOT EXISTS idx_moderation_results_disposition
 ON moderation_results (disposition, created_at);
 
+CREATE TABLE IF NOT EXISTS moderation_human_reviews (
+    id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL UNIQUE,
+    moderation_result_id TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL CHECK (status IN ('pending', 'resolved')),
+    decision TEXT CHECK (
+        decision IS NULL OR decision IN ('allow_routing', 'block_routing')
+    ),
+    reviewer_ref TEXT,
+    external_review_key TEXT UNIQUE,
+    created_at TEXT NOT NULL,
+    resolved_at TEXT,
+    FOREIGN KEY (event_id) REFERENCES inbound_events(id) ON DELETE CASCADE,
+    FOREIGN KEY (moderation_result_id)
+        REFERENCES moderation_results(id) ON DELETE CASCADE,
+    CHECK (
+        (
+            status = 'pending'
+            AND decision IS NULL
+            AND reviewer_ref IS NULL
+            AND external_review_key IS NULL
+            AND resolved_at IS NULL
+        )
+        OR
+        (
+            status = 'resolved'
+            AND decision IS NOT NULL
+            AND reviewer_ref IS NOT NULL
+            AND length(trim(reviewer_ref)) > 0
+            AND external_review_key IS NOT NULL
+            AND length(trim(external_review_key)) > 0
+            AND resolved_at IS NOT NULL
+        )
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_moderation_human_reviews_status
+ON moderation_human_reviews (status, created_at);
+
 CREATE TABLE IF NOT EXISTS classification_results (
     id TEXT PRIMARY KEY,
     event_id TEXT NOT NULL UNIQUE,

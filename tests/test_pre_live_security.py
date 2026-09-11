@@ -26,6 +26,7 @@ LEGACY_IMPORT_ROOTS = {
     "database_manager",
 }
 APPROVED_LIVE_HOSTS = {
+    "api.openai.com",
     "api.telegram.org",
     "graph.facebook.com",
     "www.googleapis.com",

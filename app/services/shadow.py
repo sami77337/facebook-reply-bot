@@ -6,6 +6,10 @@ from app.domain.classification import ClassificationRoute
 from app.domain.faq import FAQEntryStatus, FAQResolutionStatus
 from app.domain.fatwa import FatwaBridgeStatus
 from app.domain.moderation import ModerationDisposition
+from app.domain.moderation_review import (
+    ModerationHumanDecision,
+    ModerationHumanReviewStatus,
+)
 from app.domain.publishing import FatwaPublicationPolicy, PublicationSourceKind
 from app.domain.shadow import ShadowDecision, ShadowEvaluation, ShadowOutcome, ShadowSummary
 from app.domain.supervisor import SupervisorEscalationStatus
@@ -13,6 +17,7 @@ from app.persistence.classification_repository import ClassificationRepository
 from app.persistence.faq_repository import FAQRepository
 from app.persistence.fatwa_repository import FatwaRepository
 from app.persistence.moderation_repository import ModerationRepository
+from app.persistence.moderation_review_repository import ModerationReviewRepository
 from app.persistence.repositories import DurableRepository
 from app.persistence.shadow_repository import ShadowRepository
 from app.persistence.supervisor_repository import SupervisorRepository
@@ -33,6 +38,7 @@ class ShadowService:
         shadows: ShadowRepository,
         evaluator_version: str = "shadow-v1",
         fatwa_policy: FatwaPublicationPolicy = FatwaPublicationPolicy.TELEGRAM_ONLY,
+        moderation_reviews: ModerationReviewRepository | None = None,
     ) -> None:
         self.events = events
         self.moderation = moderation
@@ -43,6 +49,19 @@ class ShadowService:
         self.shadows = shadows
         self.evaluator_version = evaluator_version
         self.fatwa_policy = fatwa_policy
+        self.moderation_reviews = moderation_reviews
+
+    def _human_review_outcome(self, event_id: str) -> ShadowOutcome | None:
+        if self.moderation_reviews is None:
+            return ShadowOutcome.WOULD_WAIT_HUMAN
+        review = self.moderation_reviews.get_for_event(event_id)
+        if review is None or review.status is ModerationHumanReviewStatus.PENDING:
+            return ShadowOutcome.WOULD_WAIT_HUMAN
+        if review.decision is ModerationHumanDecision.BLOCK_ROUTING:
+            return ShadowOutcome.BLOCKED
+        if review.decision is ModerationHumanDecision.ALLOW_ROUTING:
+            return None
+        return ShadowOutcome.BLOCKED
 
     def evaluate(self, event_id: str) -> ShadowEvaluation:
         """Compute and persist one immutable shadow observation for an event."""
@@ -54,7 +73,9 @@ class ShadowService:
         if moderation.disposition is ModerationDisposition.BLOCK_ROUTING:
             return self._record(event_id, ShadowOutcome.BLOCKED)
         if moderation.disposition is ModerationDisposition.HUMAN_REVIEW:
-            return self._record(event_id, ShadowOutcome.WOULD_WAIT_HUMAN)
+            review_outcome = self._human_review_outcome(event_id)
+            if review_outcome is not None:
+                return self._record(event_id, review_outcome)
 
         classification = self.classifications.get_for_event(event_id)
         if classification is None:

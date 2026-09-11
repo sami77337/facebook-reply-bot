@@ -9,6 +9,11 @@ from app.domain.classification import ClassificationRoute
 from app.domain.events import Platform
 from app.domain.faq import FAQEntryStatus, FAQResolutionStatus
 from app.domain.fatwa import FatwaBridgeStatus
+from app.domain.moderation import ModerationDisposition
+from app.domain.moderation_review import (
+    ModerationHumanDecision,
+    ModerationHumanReviewStatus,
+)
 from app.domain.publishing import (
     FatwaPublicationPolicy,
     PublicationResult,
@@ -20,6 +25,8 @@ from app.domain.supervisor import SupervisorEscalationStatus
 from app.persistence.classification_repository import ClassificationRepository
 from app.persistence.faq_repository import FAQRepository
 from app.persistence.fatwa_repository import FatwaRepository
+from app.persistence.moderation_repository import ModerationRepository
+from app.persistence.moderation_review_repository import ModerationReviewRepository
 from app.persistence.publishing_repository import PublishingRepository
 from app.persistence.repositories import DurableRepository
 from app.persistence.supervisor_repository import SupervisorRepository
@@ -55,6 +62,8 @@ class PublishingService:
         publications: PublishingRepository,
         publishers: Mapping[Platform, ReplyPublisher],
         fatwa_policy: FatwaPublicationPolicy = FatwaPublicationPolicy.TELEGRAM_ONLY,
+        moderation: ModerationRepository | None = None,
+        moderation_reviews: ModerationReviewRepository | None = None,
     ) -> None:
         self.events = events
         self.classifications = classifications
@@ -64,11 +73,36 @@ class PublishingService:
         self.publications = publications
         self.publishers = publishers
         self.fatwa_policy = fatwa_policy
+        self.moderation = moderation
+        self.moderation_reviews = moderation_reviews
+
+    def _effective_moderation_allows(self, event_id: str) -> bool:
+        if self.moderation is None:
+            return True
+        result = self.moderation.get_for_event(event_id)
+        if result is None:
+            return False
+        if result.disposition is ModerationDisposition.ALLOW_ROUTING:
+            return True
+        if result.disposition is not ModerationDisposition.HUMAN_REVIEW:
+            return False
+        if self.moderation_reviews is None:
+            return False
+        review = self.moderation_reviews.get_for_event(event_id)
+        return bool(
+            review is not None
+            and review.status is ModerationHumanReviewStatus.RESOLVED
+            and review.decision is ModerationHumanDecision.ALLOW_ROUTING
+        )
 
     def resolve_content(self, event_id: str) -> PublishableContent:
         """Resolve exact durable source text without generation or transformation."""
 
         event = self.events.get_event(event_id)
+        if not self._effective_moderation_allows(event_id):
+            raise PublishingNotEligible(
+                "publication requires effective moderation allow_routing"
+            )
         if event.external_comment_id is None or not event.external_comment_id.strip():
             raise PublishingNotEligible("origin event has no publishable reply target")
         classification = self.classifications.get_for_event(event_id)
