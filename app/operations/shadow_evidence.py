@@ -65,7 +65,10 @@ class ShadowEvidenceService:
         return hashlib.sha256(encoded).hexdigest()
 
     def report(self, evaluator_version: str) -> ShadowEvidenceReport:
-        """Return reconciled aggregates for one evaluator version or fail when evidence is absent."""
+        """Return reconciled aggregates for one evaluator version.
+
+        Missing evidence fails closed rather than producing a zero-count pseudo-result.
+        """
 
         version = self._version(evaluator_version)
         with self.database.connect_readonly() as connection:
