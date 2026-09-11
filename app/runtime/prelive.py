@@ -224,6 +224,8 @@ def create_prelive_sandbox_runtime(
         publications=publications,
         publishers=dict(publishers or {}),
         fatwa_policy=fatwa_policy,
+        moderation=moderation_results,
+        moderation_reviews=moderation_review_results,
     )
     ingress = IngressRuntime(
         meta=MetaWebhookIngress(collector=collector, app_secret=meta_app_secret),
