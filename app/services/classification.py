@@ -9,8 +9,13 @@ from app.domain.classification import (
     ClassificationResult,
 )
 from app.domain.moderation import ModerationDisposition
+from app.domain.moderation_review import (
+    ModerationHumanDecision,
+    ModerationHumanReviewStatus,
+)
 from app.persistence.classification_repository import ClassificationRepository
 from app.persistence.moderation_repository import ModerationRepository
+from app.persistence.moderation_review_repository import ModerationReviewRepository
 from app.persistence.repositories import DurableRepository
 from app.services.classification_policy import ClassificationPolicy
 
@@ -46,23 +51,39 @@ class ClassificationService:
         results: ClassificationRepository,
         adapter: ClassificationAdapter,
         policy: ClassificationPolicy,
+        moderation_reviews: ModerationReviewRepository | None = None,
     ) -> None:
         self.events = events
         self.moderation = moderation
         self.results = results
         self.adapter = adapter
         self.policy = policy
+        self.moderation_reviews = moderation_reviews
+
+    def _routing_is_allowed(self, event_id: str) -> bool:
+        moderation_result = self.moderation.get_for_event(event_id)
+        if moderation_result is None:
+            return False
+        if moderation_result.disposition is ModerationDisposition.ALLOW_ROUTING:
+            return True
+        if moderation_result.disposition is not ModerationDisposition.HUMAN_REVIEW:
+            return False
+        if self.moderation_reviews is None:
+            return False
+
+        review = self.moderation_reviews.get_for_event(event_id)
+        return bool(
+            review is not None
+            and review.status is ModerationHumanReviewStatus.RESOLVED
+            and review.decision is ModerationHumanDecision.ALLOW_ROUTING
+        )
 
     async def classify(self, event_id: str) -> ClassificationResult:
-        """Classify only events whose durable moderation result explicitly allows routing."""
+        """Classify only events whose effective durable moderation allows routing."""
 
-        moderation_result = self.moderation.get_for_event(event_id)
-        if (
-            moderation_result is None
-            or moderation_result.disposition is not ModerationDisposition.ALLOW_ROUTING
-        ):
+        if not self._routing_is_allowed(event_id):
             raise ClassificationNotEligible(
-                "classification requires durable moderation disposition allow_routing"
+                "classification requires durable moderation permission to route"
             )
 
         existing = self.results.get_for_event(event_id)
