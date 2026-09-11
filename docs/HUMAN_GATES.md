@@ -74,7 +74,7 @@ Real sandbox credentials and provider-side validation remain a Human Gate becaus
 
 **Status:** NOT CONNECTED BY DESIGN
 
-The Phase 7 bridge remains a durable contract. No external FATWA runtime is called by Phases 11–12.
+The Phase 7 bridge remains a durable contract. No external FATWA runtime is called by Phases 11–17.
 
 The real connection requires authentication material, approved-result provenance verification, and failure/reconciliation validation in sandbox/staging before activation.
 
@@ -88,9 +88,24 @@ Any later move to `origin_only` or `both` remains a production policy decision a
 
 ## HG-08 — Dependency/security assessment
 
-**Status:** REQUIRED BEFORE LIVE
+**Status:** ENGINEERING PASS / POINT-IN-TIME SCA COMPLETE IN PHASE 17
 
-Functional CI validates installation and tests but does not constitute a software-composition vulnerability assessment. Run and record SCA/dependency review and choose a production lock/pinning strategy before live activation.
+Phase 17 implements and records the non-credential supply-chain gate:
+
+- direct project, development, security, and build dependencies are exact-version pinned;
+- `requirements-prod.lock` records the resolved Python 3.12 production dependency graph;
+- `requirements-build.lock` pins `pip` and `setuptools` used by CI/build preparation;
+- `pip check` is a blocking CI gate;
+- `pip-audit==2.10.1` audits the production lock, build tooling, and CI/development environment;
+- CI reconstructs a clean production environment from the lock and compares its resolved freeze against the committed lock;
+- GitHub Actions are pinned to full commit SHAs and checkout uses `persist-credentials: false`;
+- regression tests prevent removal of the SCA gates, reintroduction of broad direct dependency ranges, or weakening of the Action pinning rules.
+
+The audit initially found `PYSEC-2026-1845` in `pytest==8.4.2`. Phase 17 upgraded pytest to `9.1.1`; subsequent runtime, build-tool, and CI/development audits all passed.
+
+This is point-in-time evidence only and is not a permanent vulnerability-free guarantee. Re-run SCA when dependencies or lock files change and before production release.
+
+A wheel/hash lock is intentionally deferred until the production OS/architecture is selected. Generating wheel hashes for an unchosen target would create false reproducibility evidence rather than strengthen the gate.
 
 ## HG-09 — Staging Shadow Mode evaluation
 
@@ -102,7 +117,7 @@ No production reply publishing is authorized during this gate.
 
 ## HG-10 — Production configuration and operations
 
-**Status:** REQUIRED
+**Status:** REQUIRED / PREPARATION CONTINUES NON-LIVE
 
 Before production activation, finalize:
 
@@ -112,6 +127,8 @@ Before production activation, finalize:
 - monitoring and alerting;
 - webhook/network ingress controls;
 - rollback/cutover procedure.
+
+Non-live runbook and validation tooling may be prepared before these owner/environment decisions are made. Production activation remains blocked until the final environment-specific choices are reviewed.
 
 ## HG-11 — Merge/promotion to `main`
 
