@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from app.persistence.operations_schema import OPERATIONS_SCHEMA_SQL
 from app.persistence.schema import SCHEMA_SQL
 
 
@@ -43,8 +44,27 @@ class SQLiteDatabase:
         connection.execute("PRAGMA journal_mode = WAL")
         return connection
 
+    def connect_readonly(self) -> sqlite3.Connection:
+        """Open an existing database without creating or mutating it."""
+
+        if not self.path.is_file():
+            raise FileNotFoundError(self.path)
+        uri = f"{self.path.resolve().as_uri()}?mode=ro"
+        connection = sqlite3.connect(
+            uri,
+            uri=True,
+            timeout=self.busy_timeout_ms / 1000,
+            isolation_level=None,
+            check_same_thread=False,
+        )
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute(f"PRAGMA busy_timeout = {self.busy_timeout_ms}")
+        return connection
+
     def initialize(self) -> None:
-        """Create the Phase 1 schema idempotently."""
+        """Create the complete idempotent V1 schema, including operational extensions."""
 
         with self.connect() as connection:
             connection.executescript(SCHEMA_SQL)
+            connection.executescript(OPERATIONS_SCHEMA_SQL)
